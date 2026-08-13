@@ -334,7 +334,7 @@
       .responsive-select > select { display: none; }
       .responsive-select-trigger { display: flex; min-height: 56px; padding: 12px 14px; font-size: 16px; }
       .responsive-select-option { min-height: 54px; padding: 12px 14px; font-size: 16px; }
-      #raceId, #authRaceId {
+      #raceId, #authRaceId, #authUsername {
         min-height: 56px;
         padding: 12px 14px;
         font-size: 16px;
@@ -379,9 +379,17 @@
     <form id="authForm" class="auth-panel" role="dialog" aria-modal="true" aria-labelledby="authTitle">
       <div class="auth-kicker">赛事控制权限</div>
       <h2 id="authTitle">裁判台权限验证</h2>
-      <p>全局管理员使用账号 admin；站点裁判使用分配给本站的账号和密码。</p>
+      <p>选择比赛场次和裁判岗位，输入对应密码后进入。</p>
       <label>比赛场次<div class="responsive-select"><select id="authRaceId" required><option value="">正在读取比赛场次...</option></select><button class="responsive-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"></button><div class="responsive-select-menu" role="listbox" hidden></div></div></label>
-      <label>裁判账号<input id="authUsername" type="text" autocomplete="username" placeholder="admin / start / station1"></label>
+      <label>裁判岗位<div class="responsive-select"><select id="authUsername" autocomplete="username" required>
+        <option value="admin">全局管理员</option>
+        <option value="start">起点 / 发枪</option>
+        <option value="station_1">站点 1</option>
+        <option value="station_2">站点 2</option>
+        <option value="station_3">站点 3</option>
+        <option value="station_4">站点 4</option>
+        <option value="station_5">站点 5 / 冲线</option>
+      </select><button class="responsive-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"></button><div class="responsive-select-menu" role="listbox" hidden></div></div></label>
       <label>密码<input id="authAdminCode" type="password" autocomplete="current-password" required></label>
       <div id="authError" class="modal-error" aria-live="polite"></div>
       <button id="authSubmitButton" class="auth-submit" type="submit">验证并进入裁判台</button>
@@ -1787,21 +1795,24 @@
       }
     }
 
-    function showAuthentication(message, { username = judgeUsername } = {}) {
+    function showAuthentication(message, { username = judgeUsername || "admin" } = {}) {
       judgeToken = "";
       judgeAdminCode = "";
       judgeConsoleStarted = false;
       window.clearInterval(pollTimer);
       pollTimer = 0;
       closeModals();
-      elements.authUsername.value = username;
+      elements.authUsername.value = judgeRoleOptions.some((option) => option.role === username)
+        ? username
+        : "admin";
+      syncResponsiveSelect(elements.authUsername);
       elements.authAdminCode.value = "";
       elements.authError.textContent = message;
       elements.authBackdrop.hidden = false;
       elements.judgeApp.inert = true;
       document.body.classList.add("auth-pending");
       setConnection("等待验证", "idle");
-      (username ? elements.authAdminCode : elements.authUsername).focus();
+      elements.authAdminCode.focus();
     }
 
     function requireRaceReauthentication(raceId) {
@@ -1817,23 +1828,21 @@
       if (!adminCode) return;
       const username = elements.authUsername.value.trim();
       const raceId = elements.authRaceId.value.trim();
-      if (username && !raceId) {
-        elements.authError.textContent = "站点账号登录时必须填写比赛 ID。";
+      if (!raceId) {
+        elements.authError.textContent = "请选择比赛场次。";
         elements.authRaceId.focus();
         return;
       }
       elements.authSubmitButton.disabled = true;
       elements.authError.textContent = "正在验证...";
       try {
-        const authPayload = username
-          ? { raceId, username, password: adminCode }
-          : { raceId, adminCode };
+        const authPayload = { raceId, username, password: adminCode };
         const auth = await readJson(await window.timingApiFetch("/api/judge-auth", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(authPayload)
         }));
-        judgeAdminCode = username ? "" : adminCode;
+        judgeAdminCode = "";
         judgeToken = auth.judgeToken || "";
         judgeRole = auth.role || "admin";
         judgeDisplayName = auth.displayName || (judgeRole === "admin" ? "管理员" : judgeRole);
@@ -1845,7 +1854,6 @@
         preferredRaceId = raceId || preferredRaceId;
         applyJudgeRoleView();
         elements.authAdminCode.value = "";
-        elements.authUsername.value = "";
         elements.authError.textContent = "";
         elements.authBackdrop.hidden = true;
         elements.judgeApp.inert = false;
@@ -1855,9 +1863,11 @@
         elements.authError.textContent = error.message === "Invalid administrator code"
           ? "密码不正确，请重新输入。"
           : error.message === "Invalid judge account or password"
-            ? "裁判账号或密码不正确。"
+            ? "裁判岗位或密码不正确。"
           : error.message === "Judge authorization is not configured"
             ? "裁判台密码尚未配置，请联系管理员。"
+          : error.message === "Local live preview is read-only"
+            ? "当前是线上数据只读预览，无法登录。请使用本地裁判服务或正式线上地址。"
             : `验证失败：${error.message}`;
         elements.authAdminCode.select();
       } finally {
@@ -1913,7 +1923,7 @@
     elements.switchAccountButton.addEventListener("click", () => {
       elements.authRaceId.value = elements.raceId.value;
       syncResponsiveSelect(elements.authRaceId);
-      showAuthentication("请输入要切换的裁判账号和密码。", { username: "" });
+      showAuthentication("请选择要切换的裁判岗位并输入密码。", { username: judgeUsername || "admin" });
     });
     elements.messageAction.addEventListener("click", () => {
       const entry = entries.find((item) => item.participantId === pendingRollbackParticipantId);
@@ -1965,6 +1975,11 @@
       setMessage("请先验证裁判台权限。", "info");
       try {
         await loadAuthRaces();
+        const requestedRole = String(pageParams.get("role") || "admin").trim().toLowerCase();
+        elements.authUsername.value = judgeRoleOptions.some((option) => option.role === requestedRole)
+          ? requestedRole
+          : "admin";
+        syncResponsiveSelect(elements.authUsername);
         elements.authAdminCode.focus();
       } catch (error) {
         elements.authError.textContent = `读取比赛场次失败：${error.message}`;

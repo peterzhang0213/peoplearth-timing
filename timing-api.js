@@ -23,8 +23,13 @@
     const requestInput = typeof input === "string" && input.startsWith("/")
       ? `${hostedApiOrigin}${input}`
       : input;
+    const method = String(init.method || "GET").toUpperCase();
+    const pathname = typeof input === "string"
+      ? new URL(input, window.location.origin).pathname
+      : "";
+    const isReadOnlyAuthentication = method === "POST" && pathname === "/api/judge-auth";
 
-    if (isReadOnlyCloudPreview && String(init.method || "GET").toUpperCase() !== "GET") {
+    if (isReadOnlyCloudPreview && method !== "GET" && !isReadOnlyAuthentication) {
       return Promise.resolve(new Response(JSON.stringify({
         ok: false,
         error: "Local live preview is read-only"
