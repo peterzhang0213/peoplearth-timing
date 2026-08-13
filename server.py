@@ -3,6 +3,7 @@ from __future__ import annotations
 import hmac
 import json
 import os
+import re
 import base64
 import hashlib
 import secrets
@@ -51,6 +52,7 @@ PARTICIPANT_COLUMNS = (
     "division",
     "check_in_status",
     "start_order",
+    "start_batch",
     "created_at",
     "updated_at",
 )
@@ -244,6 +246,9 @@ def init_db() -> None:
               member_names TEXT NOT NULL DEFAULT '[]',
               division TEXT,
               start_order INTEGER NOT NULL DEFAULT 1 CHECK (start_order > 0),
+              start_batch INTEGER CHECK (
+                start_batch IS NULL OR start_batch BETWEEN 1 AND 100000
+              ),
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL,
               UNIQUE (race_id, card_code)
@@ -393,6 +398,12 @@ def init_db() -> None:
             """
         )
         ensure_participant_columns(db)
+        db.execute("DROP INDEX IF EXISTS idx_participants_race_bib_number")
+        db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_race_bib_number "
+            "ON participants (race_id, bib_number) "
+            "WHERE entry_type <> 'individual' AND bib_number IS NOT NULL AND trim(bib_number) <> ''"
+        )
         ensure_race_profile_columns(db)
         ensure_timing_event_columns(db)
         ensure_default_race_profiles(db)
@@ -433,6 +444,7 @@ def ensure_participant_columns(db: sqlite3.Connection) -> None:
             "ALTER TABLE participants "
             "ADD COLUMN start_order INTEGER NOT NULL DEFAULT 1"
         ),
+        "start_batch": "ALTER TABLE participants ADD COLUMN start_batch INTEGER",
     }
     added_start_order = "start_order" not in existing_columns
     for column_name, statement in migrations.items():
@@ -607,7 +619,7 @@ def ensure_default_race_profiles(db: sqlite3.Connection) -> None:
         ),
         (
             "hoka-race-final",
-            "HOKA 团队挑战赛 - 决赛",
+            "HOKA 团队挑战赛 - 上海决赛",
             "station_checkpoints",
             5,
             build_station_checkpoints(5),
@@ -664,6 +676,15 @@ def ensure_default_race_profiles(db: sqlite3.Connection) -> None:
             utc_now(),
             "nfc-test-001",
             "HOKA 团队挑战赛 - 测试数据",
+        ),
+    )
+    db.execute(
+        "UPDATE race_profiles SET name = ?, updated_at = ? WHERE race_id = ? AND name <> ?",
+        (
+            "HOKA 团队挑战赛 - 上海决赛",
+            utc_now(),
+            "hoka-race-final",
+            "HOKA 团队挑战赛 - 上海决赛",
         ),
     )
 
@@ -901,6 +922,28 @@ def optional_start_order(value) -> int | None:
     if not 1 <= start_order <= 100000:
         raise ValueError("startOrder must be between 1 and 100000")
     return start_order
+
+
+def optional_start_batch(value) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        start_batch = int(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError("startBatch must be a positive integer") from error
+    if not 1 <= start_batch <= 100000:
+        raise ValueError("startBatch must be between 1 and 100000")
+    return start_batch
+
+
+def normalize_bib_number(value, race_id: str, entry_type: str) -> str | None:
+    bib_number = str(value or "").strip().upper()
+    hoka_team = race_id.startswith("hoka-race-final") and entry_type != "individual"
+    if len(bib_number) > 20:
+        raise ValueError("bibNumber must be 20 characters or fewer")
+    if hoka_team and not re.fullmatch(r"\d{2}-\d{2}", bib_number):
+        raise ValueError("HOKA team bibNumber is required in 01-01 format")
+    return bib_number or None
 
 
 def result_adjustment_response(row: sqlite3.Row | dict) -> dict:
@@ -2362,8 +2405,13 @@ class TimingHandler(SimpleHTTPRequestHandler):
             configured_code = leaderboard_clear_code()
             entry = normalize_participant_entry(payload)
             entry_type = entry["entry_type"]
+            bib_number = normalize_bib_number(
+                payload.get("bibNumber"), race_id, entry_type
+            )
             check_in_status = str(payload.get("checkInStatus") or "checked_in").strip()
             requested_start_order = optional_start_order(payload.get("startOrder"))
+            start_batch_provided = "startBatch" in payload
+            start_batch = optional_start_batch(payload.get("startBatch"))
 
             if len(configured_code) < 8:
                 self.send_json(
@@ -2435,6 +2483,14 @@ class TimingHandler(SimpleHTTPRequestHandler):
                             HTTPStatus.NOT_FOUND,
                         )
                         return
+                    if entry_type != "individual" and bib_number and db.execute(
+                        "SELECT 1 FROM participants WHERE race_id = ? AND bib_number = ? "
+                        "AND entry_type <> 'individual' AND id <> ? LIMIT 1",
+                        (race_id, bib_number, participant_id),
+                    ).fetchone():
+                        raise ValueError("bibNumber is already assigned in this race")
+                    if not start_batch_provided:
+                        start_batch = existing["start_batch"]
                     start_order = requested_start_order or int(existing["start_order"] or 1)
                     if db.execute(
                         "SELECT 1 FROM participants WHERE race_id = ? AND start_order = ? "
@@ -2455,13 +2511,14 @@ class TimingHandler(SimpleHTTPRequestHandler):
                             division = ?,
                             check_in_status = ?,
                             start_order = ?,
+                            start_batch = ?,
                             updated_at = ?
                         WHERE race_id = ? AND id = ?
                         """,
                         (
                             card_code,
                             entry["display_name"],
-                            str(payload.get("bibNumber") or "").strip() or None,
+                            bib_number,
                             entry_type,
                             json.dumps(entry["member_names"], ensure_ascii=False),
                             phone,
@@ -2469,6 +2526,7 @@ class TimingHandler(SimpleHTTPRequestHandler):
                             division,
                             check_in_status,
                             start_order,
+                            start_batch,
                             now,
                             race_id,
                             participant_id,
@@ -2805,6 +2863,8 @@ class TimingHandler(SimpleHTTPRequestHandler):
                 {
                     "participantId": participant["id"],
                     "athleteName": participant["athlete_name"],
+                    "bibNumber": participant.get("bib_number"),
+                    "startBatch": participant.get("start_batch"),
                     "entryType": participant["entry_type"],
                     "memberNames": participant["member_names"],
                     "cardCode": participant["card_code"],
@@ -4487,7 +4547,9 @@ class TimingHandler(SimpleHTTPRequestHandler):
             athlete_name = entry["display_name"]
             entry_type = entry["entry_type"]
             member_names = entry["member_names"]
-            bib_number = str(payload.get("bibNumber") or "").strip() or None
+            bib_number = normalize_bib_number(
+                payload.get("bibNumber"), race_id, entry_type
+            )
             phone = (
                 str(payload.get("phone") or "").strip() or None
                 if entry_type == "individual"
@@ -4505,6 +4567,7 @@ class TimingHandler(SimpleHTTPRequestHandler):
             )
             check_in_status = str(payload.get("checkInStatus") or "checked_in").strip()
             requested_start_order = optional_start_order(payload.get("startOrder"))
+            start_batch = optional_start_batch(payload.get("startBatch"))
             if not race_id or not card_code or not athlete_name:
                 raise ValueError("raceId, cardCode and athleteName are required")
             if check_in_status not in {"not_checked_in", "checked_in"}:
@@ -4526,6 +4589,12 @@ class TimingHandler(SimpleHTTPRequestHandler):
             now = utc_now()
             try:
                 with connect_db() as db:
+                    if entry_type != "individual" and bib_number and db.execute(
+                        "SELECT 1 FROM participants WHERE race_id = ? AND bib_number = ? "
+                        "AND entry_type <> 'individual' LIMIT 1",
+                        (race_id, bib_number),
+                    ).fetchone():
+                        raise ValueError("bibNumber is already assigned in this race")
                     start_order = requested_start_order
                     if start_order is None:
                         start_order = db.execute(
@@ -4552,10 +4621,11 @@ class TimingHandler(SimpleHTTPRequestHandler):
                           division,
                           check_in_status,
                           start_order,
+                          start_batch,
                           created_at,
                           updated_at
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             race_id,
@@ -4569,6 +4639,7 @@ class TimingHandler(SimpleHTTPRequestHandler):
                             division,
                             check_in_status,
                             start_order,
+                            start_batch,
                             now,
                             now,
                         ),

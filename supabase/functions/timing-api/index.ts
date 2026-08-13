@@ -53,8 +53,8 @@ function publicApiKeys(): string[] {
 
 function serviceApiKey(): string {
   const modernKeys = parseKeyMap(Deno.env.get("SUPABASE_SECRET_KEYS"));
-  return Deno.env.get("DATABASE_REST_SERVICE_KEY")
-    || modernKeys[0]
+  return modernKeys[0]
+    || Deno.env.get("DATABASE_REST_SERVICE_KEY")
     || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
     || "";
 }
@@ -386,6 +386,25 @@ function normalizeParticipantEntry(payload: JsonObject): {
   return { entryType, displayName, memberNames };
 }
 
+function normalizeBibNumber(value: unknown, raceId: string, entryType: string): string | null {
+  const bibNumber = String(value || "").trim().toUpperCase();
+  const hokaTeam = raceId.startsWith("hoka-race-final") && entryType !== "individual";
+  if (bibNumber.length > 20) throw new Error("bibNumber must be 20 characters or fewer");
+  if (hokaTeam && !/^\d{2}-\d{2}$/.test(bibNumber)) {
+    throw new Error("HOKA team bibNumber is required in 01-01 format");
+  }
+  return bibNumber || null;
+}
+
+function optionalStartBatch(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  const startBatch = Number(value);
+  if (!Number.isInteger(startBatch) || startBatch < 1 || startBatch > 100000) {
+    throw new Error("startBatch must be between 1 and 100000");
+  }
+  return startBatch;
+}
+
 function buildCheckpoints(mode: string, stationCount: number): string[] {
   if (mode === "station_checkpoints") {
     return [
@@ -602,6 +621,8 @@ function buildStartQueue(
     return {
       participantId,
       athleteName: participant.athlete_name,
+      bibNumber: participant.bib_number || null,
+      startBatch: participant.start_batch ?? null,
       entryType: participant.entry_type || "individual",
       memberNames: Array.isArray(participant.member_names) ? participant.member_names : [],
       cardCode: participant.card_code,
@@ -1836,6 +1857,9 @@ async function handlePost(route: string, request: Request): Promise<Response> {
     const confirmation = String(payload.confirmation || "").trim();
     const suppliedCode = String(payload.adminCode || "");
     const entry = normalizeParticipantEntry(payload);
+    const bibNumber = normalizeBibNumber(payload.bibNumber, raceId, entry.entryType);
+    const startBatchProvided = payload.startBatch !== undefined;
+    const startBatch = optionalStartBatch(payload.startBatch);
     const checkInStatus = String(payload.checkInStatus || "checked_in").trim();
     const requestedStartOrder = payload.startOrder === undefined || payload.startOrder === ""
       ? null
@@ -1877,16 +1901,30 @@ async function handlePost(route: string, request: Request): Promise<Response> {
       );
     }
 
-    const existingRows = await databaseRequest("participants", {
+    const [existingRows, conflictingBibRows] = await Promise.all([
+      databaseRequest("participants", {
       query: {
         select: "id,start_order",
         race_id: `eq.${raceId}`,
         id: `eq.${participantId}`,
         limit: "1",
       },
-    });
+      }),
+      entry.entryType !== "individual" && bibNumber ? databaseRequest("participants", {
+        query: {
+          select: "id",
+          race_id: `eq.${raceId}`,
+          bib_number: `eq.${bibNumber}`,
+          id: `neq.${participantId}`,
+          limit: "1",
+        },
+      }) : Promise.resolve([]),
+    ]);
     if (!existingRows[0]) {
       return jsonResponse({ ok: false, error: "Participant was not found in this race" }, 404);
+    }
+    if (conflictingBibRows[0]) {
+      return jsonResponse({ ok: false, error: "bibNumber is already assigned in this race" }, 409);
     }
     const startOrder = requestedStartOrder ?? Number(existingRows[0].start_order || 1);
     const conflictingOrders = await databaseRequest("participants", {
@@ -1913,7 +1951,7 @@ async function handlePost(route: string, request: Request): Promise<Response> {
         body: {
           card_code: cardCode,
           athlete_name: entry.displayName,
-          bib_number: String(payload.bibNumber || "").trim() || null,
+          bib_number: bibNumber,
           entry_type: entry.entryType,
           member_names: entry.memberNames,
           phone: entry.entryType === "individual"
@@ -1927,12 +1965,19 @@ async function handlePost(route: string, request: Request): Promise<Response> {
             : null,
           check_in_status: checkInStatus,
           start_order: startOrder,
+          ...(startBatchProvided ? { start_batch: startBatch } : {}),
           updated_at: new Date().toISOString(),
         },
         prefer: "return=representation",
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("participants_race_bib_number_key")) {
+        return jsonResponse({
+          ok: false,
+          error: "bibNumber is already assigned in this race",
+        }, 409);
+      }
       if (message.includes("participants_race_card_key") || message.includes("duplicate key value")) {
         return jsonResponse({
           ok: false,
@@ -2767,6 +2812,8 @@ async function handlePost(route: string, request: Request): Promise<Response> {
     const raceId = requiredRaceId(payload.raceId || "hyrox-sim-001");
     const cardCode = String(payload.cardCode || "").trim().toUpperCase();
     const entry = normalizeParticipantEntry(payload);
+    const bibNumber = normalizeBibNumber(payload.bibNumber, raceId, entry.entryType);
+    const startBatch = optionalStartBatch(payload.startBatch);
     const athleteName = entry.displayName;
     const checkInStatus = String(payload.checkInStatus || "checked_in").trim();
     if (!cardCode || !athleteName) {
@@ -2798,7 +2845,8 @@ async function handlePost(route: string, request: Request): Promise<Response> {
     ) {
       throw new Error("startOrder must be between 1 and 100000");
     }
-    const startOrderRows = await databaseRequest("participants", {
+    const [startOrderRows, conflictingBibRows] = await Promise.all([
+      databaseRequest("participants", {
       query: {
         select: "id,start_order",
         race_id: `eq.${raceId}`,
@@ -2806,9 +2854,21 @@ async function handlePost(route: string, request: Request): Promise<Response> {
           ? { order: "start_order.desc", limit: "1" }
           : { start_order: `eq.${requestedStartOrder}`, limit: "1" }),
       },
-    });
+      }),
+      entry.entryType !== "individual" && bibNumber ? databaseRequest("participants", {
+        query: {
+          select: "id",
+          race_id: `eq.${raceId}`,
+          bib_number: `eq.${bibNumber}`,
+          limit: "1",
+        },
+      }) : Promise.resolve([]),
+    ]);
     if (requestedStartOrder !== null && startOrderRows[0]) {
       return jsonResponse({ ok: false, error: "startOrder is already assigned in this race" }, 409);
+    }
+    if (conflictingBibRows[0]) {
+      return jsonResponse({ ok: false, error: "bibNumber is already assigned in this race" }, 409);
     }
     const startOrder = requestedStartOrder
       ?? (Number(startOrderRows[0]?.start_order || 0) + 1);
@@ -2817,7 +2877,7 @@ async function handlePost(route: string, request: Request): Promise<Response> {
       race_id: raceId,
       card_code: cardCode,
       athlete_name: athleteName,
-      bib_number: String(payload.bibNumber || "").trim() || null,
+      bib_number: bibNumber,
       entry_type: entry.entryType,
       member_names: entry.memberNames,
       phone: entry.entryType === "individual"
@@ -2831,6 +2891,7 @@ async function handlePost(route: string, request: Request): Promise<Response> {
         : null,
       check_in_status: checkInStatus,
       start_order: startOrder,
+      start_batch: startBatch,
       created_at: now,
       updated_at: now,
     };
@@ -2843,6 +2904,12 @@ async function handlePost(route: string, request: Request): Promise<Response> {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("participants_race_bib_number_key")) {
+        return jsonResponse({
+          ok: false,
+          error: "bibNumber is already assigned in this race",
+        }, 409);
+      }
       if (message.includes("participants_race_card_key") || message.includes("duplicate key value")) {
         return jsonResponse({
           ok: false,

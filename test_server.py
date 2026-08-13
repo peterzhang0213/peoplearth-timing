@@ -1866,6 +1866,88 @@ class TimingApiTests(unittest.TestCase):
         self.assertEqual(team_row["memberNames"], ["A", "B", "C", "D"])
         self.assertEqual(team_row["memberCount"], 4)
 
+    def test_hoka_team_code_and_optional_start_batch(self):
+        self.request_json(
+            "/api/race-config",
+            {
+                "raceId": "hoka-race-final-test",
+                "name": "HOKA Shanghai Final Test",
+                "mode": "station_checkpoints",
+                "stationCount": 5,
+                "checkpointLayout": "station_starts",
+                "entryType": "team",
+            },
+        )
+        base = {
+            "raceId": "hoka-race-final-test",
+            "entryType": "team",
+            "memberNames": ["A", "B", "C", "D"],
+        }
+        no_batch = self.request_json(
+            "/api/participants",
+            {
+                **base,
+                "cardCode": "FINAL-001",
+                "athleteName": "Final Team One",
+                "bibNumber": "01-01",
+                "startBatch": None,
+            },
+        )["participant"]
+        self.assertEqual(no_batch["bib_number"], "01-01")
+        self.assertIsNone(no_batch["start_batch"])
+
+        shared_batch = self.request_json(
+            "/api/participants",
+            {
+                **base,
+                "cardCode": "FINAL-002",
+                "athleteName": "Final Team Two",
+                "bibNumber": "01-02",
+                "startBatch": 1,
+            },
+        )["participant"]
+        self.assertEqual(shared_batch["start_batch"], 1)
+        another_shared_batch = self.request_json(
+            "/api/participants",
+            {
+                **base,
+                "cardCode": "FINAL-003",
+                "athleteName": "Final Team Three",
+                "bibNumber": "01-03",
+                "startBatch": 1,
+            },
+        )["participant"]
+        self.assertEqual(another_shared_batch["start_batch"], 1)
+
+        queue = self.request_json(
+            "/api/start-queue?raceId=hoka-race-final-test"
+        )["entries"]
+        first = next(entry for entry in queue if entry["bibNumber"] == "01-01")
+        self.assertIsNone(first["startBatch"])
+
+        invalid = self.assert_post_error(
+            "/api/participants",
+            {
+                **base,
+                "cardCode": "FINAL-004",
+                "athleteName": "Invalid Team",
+                "bibNumber": "1-4",
+            },
+            HTTPStatus.BAD_REQUEST,
+        )
+        self.assertIn("01-01 format", invalid["error"])
+        duplicate = self.assert_post_error(
+            "/api/participants",
+            {
+                **base,
+                "cardCode": "FINAL-005",
+                "athleteName": "Duplicate Team",
+                "bibNumber": "01-01",
+            },
+            HTTPStatus.BAD_REQUEST,
+        )
+        self.assertIn("already assigned", duplicate["error"])
+
     def test_three_reader_api_requires_finish_role_for_end(self):
         server.save_race_profile(
             server.make_race_profile(

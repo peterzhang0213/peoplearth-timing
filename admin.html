@@ -619,7 +619,7 @@
 
     <section id="participantBinding">
       <h2>参赛登记 / NFC 绑定</h2>
-      <p>一张 NFC 卡对应一个参赛单位；个人资料或团队成员只存后台。</p>
+      <p>一张 NFC 卡对应一个参赛单位；HOKA 队伍编号使用 01-01 格式，出发批次可留空。</p>
       <form id="participantForm" class="grid">
         <label>
           比赛 / Race ID
@@ -645,6 +645,11 @@
         <label>
           <span id="displayNameLabel">选手姓名</span>
           <input id="athleteName" placeholder="Peter Zhang" autocomplete="off" required>
+        </label>
+        <label>
+          <span id="bibNumberLabel">选手编号（选填）</span>
+          <input id="bibNumber" maxlength="20" placeholder="例如：101" autocomplete="off">
+          <small id="bibNumberHelp" class="field-help">用于现场核对和大屏展示。</small>
         </label>
         <label id="memberCountField">
           参赛人数
@@ -682,6 +687,11 @@
             <option value="checked_in">Checked In</option>
             <option value="not_checked_in">Not Checked In</option>
           </select>
+        </label>
+        <label>
+          出发批次（选填）
+          <input id="startBatch" type="number" min="1" max="100000" step="1" placeholder="留空不分配批次">
+          <small class="field-help">只用于现场分组参考；留空不影响待发和多选发枪。</small>
         </label>
         <div class="actions">
           <button id="saveParticipantButton" type="submit">保存 / 绑定</button>
@@ -746,15 +756,17 @@
         <table>
           <thead>
             <tr>
+              <th>队伍编号</th>
               <th>参赛单位</th>
               <th>类型 / 成员</th>
+              <th>出发批次</th>
               <th>NFC 卡</th>
               <th>报到状态</th>
               <th>操作</th>
             </tr>
           </thead>
           <tbody id="participantsBody">
-            <tr class="empty-row"><td colspan="5">正在读取选手数据。</td></tr>
+            <tr class="empty-row"><td colspan="7">正在读取选手数据。</td></tr>
           </tbody>
         </table>
       </div>
@@ -928,8 +940,12 @@
     const memberFields = document.querySelector("#memberFields");
     const displayNameLabel = document.querySelector("#displayNameLabel");
     const athleteNameInput = document.querySelector("#athleteName");
+    const bibNumberInput = document.querySelector("#bibNumber");
+    const bibNumberLabel = document.querySelector("#bibNumberLabel");
+    const bibNumberHelp = document.querySelector("#bibNumberHelp");
     const individualFields = Array.from(document.querySelectorAll("[data-individual-field]"));
     const cardCodeInput = document.querySelector("#cardCode");
+    const startBatchInput = document.querySelector("#startBatch");
     const saveParticipantButton = document.querySelector("#saveParticipantButton");
     const cancelEditButton = document.querySelector("#cancelEditButton");
     const adminCodeModal = document.querySelector("#adminCodeModal");
@@ -1145,6 +1161,7 @@
       const previousEntryType = activeEntryType;
       entryTypeSelect.value = normalized;
       const isIndividual = normalized === "individual";
+      const requiresFinalTeamCode = !isIndividual && selectedRaceId().startsWith("hoka-race-final");
       const memberCount = isIndividual
         ? 1
         : normalized === "doubles"
@@ -1164,6 +1181,17 @@
         : normalized === "doubles"
           ? "Fast Pair"
           : "SRC Team";
+      bibNumberLabel.textContent = isIndividual
+        ? "选手编号（选填）"
+        : requiresFinalTeamCode
+          ? "队伍编号"
+          : "队伍编号（选填）";
+      bibNumberInput.placeholder = isIndividual ? "例如：101" : "例如：01-01";
+      bibNumberInput.pattern = requiresFinalTeamCode ? "[0-9]{2}-[0-9]{2}" : "";
+      bibNumberInput.required = requiresFinalTeamCode;
+      bibNumberHelp.textContent = requiresFinalTeamCode
+        ? "上海决赛队伍编号必填，格式为两位数字-两位数字，例如 01-01。"
+        : "用于现场核对和大屏展示。";
       individualFields.forEach((field) => {
         field.classList.toggle("field-hidden", !isIndividual);
         field.querySelectorAll("input, select").forEach((control) => {
@@ -1207,6 +1235,8 @@
       memberFields.replaceChildren();
       activeEntryType = "individual";
       cardCodeInput.readOnly = false;
+      bibNumberInput.value = "";
+      startBatchInput.value = "";
       saveParticipantButton.textContent = "保存 / 绑定";
       cancelEditButton.hidden = true;
       applyEntryType(selectedRaceDefaultEntryType);
@@ -1220,6 +1250,8 @@
       cardCodeInput.value = participant.card_code;
       cardCodeInput.readOnly = false;
       athleteNameInput.value = participant.athlete_name || "";
+      bibNumberInput.value = participant.bib_number || "";
+      startBatchInput.value = participant.start_batch == null ? "" : String(participant.start_batch);
       document.querySelector("#phone").value = participant.phone || "";
       document.querySelector("#gender").value = participant.gender || "";
       document.querySelector("#division").value = participant.division || "";
@@ -1766,7 +1798,7 @@
       ).length;
       if (!participants.length) {
         participantsBody.innerHTML = `
-          <tr class="empty-row"><td colspan="6">当前比赛还没有参赛单位，请先在上方登记并绑定 NFC 卡。</td></tr>
+          <tr class="empty-row"><td colspan="7">当前比赛还没有参赛单位，请先在上方登记并绑定 NFC 卡。</td></tr>
         `;
         return;
       }
@@ -1780,8 +1812,10 @@
           : escapeHtml(memberNames.join(" / "));
         return `
           <tr>
+            <td><strong>${escapeHtml(participant.bib_number || "-")}</strong></td>
             <td><strong>${escapeHtml(participant.athlete_name)}</strong></td>
             <td>${escapeHtml(entryTypeLabel(entryType))}${entryType === "individual" ? "" : `<br><span class="muted">${memberSummary}</span>`}</td>
+            <td>${escapeHtml(participant.start_batch == null ? "未分配" : `第 ${participant.start_batch} 批`)}</td>
             <td class="mono">${escapeHtml(participant.card_code)}</td>
             <td><span class="pill ${escapeHtml(participant.check_in_status)}">${escapeHtml(participant.check_in_status)}</span></td>
             <td>
@@ -1832,12 +1866,14 @@
           raceId: selectedRaceId(),
           cardCode: cardCodeInput.value.trim().toUpperCase(),
           athleteName: displayName,
+          bibNumber: bibNumberInput.value.trim(),
           entryType,
           memberNames,
           phone: entryType === "individual" ? document.querySelector("#phone").value.trim() : "",
           gender: entryType === "individual" ? document.querySelector("#gender").value : "",
           division: entryType === "individual" ? document.querySelector("#division").value : "",
           checkInStatus: document.querySelector("#checkInStatus").value,
+          startBatch: startBatchInput.value ? Number(startBatchInput.value) : null,
         };
         const isEditing = Number.isInteger(editingParticipantId) && editingParticipantId > 0;
         let endpoint = "/api/participants";

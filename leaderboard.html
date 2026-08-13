@@ -1960,7 +1960,7 @@
             <select id="raceId" autocomplete="off">
               <option value="hoka-race-sh" selected>HOKA 团队挑战赛 - 上海站</option>
               <option value="hoka-race-hz">HOKA 团队挑战赛 - 杭州站</option>
-              <option value="hoka-race-final">HOKA 团队挑战赛 - 决赛</option>
+              <option value="hoka-race-final">HOKA 团队挑战赛 - 上海决赛</option>
               <option value="hoka-race-demo">HOKA 团队挑战赛 - 测试数据</option>
             </select>
             <button class="responsive-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="raceIdMenu"></button>
@@ -2302,8 +2302,8 @@
         raceId: "hoka-race-final",
         kind: "session",
         status: "active",
-        zh: "HOKA 团队挑战赛 - 决赛",
-        en: "HOKA Team Challenge - Final"
+        zh: "HOKA 团队挑战赛 - 上海决赛",
+        en: "HOKA Team Challenge - Shanghai Final"
       }
     ];
     const fitMonsterStationNames = {
@@ -3417,7 +3417,7 @@
             <div class="hoka-mobile-identity">
               <span class="hoka-mobile-rank">#${escapeHtml(row.rank)}</span>
               <div class="hoka-mobile-title">
-                <div class="hoka-mobile-name">${escapeHtml(row.athleteName)}</div>
+                <div class="hoka-mobile-name">${escapeHtml(row.bibNumber ? `${row.bibNumber} · ${row.athleteName}` : row.athleteName)}</div>
                 ${members}
               </div>
             </div>
@@ -3540,7 +3540,7 @@
           athleteName,
           entryType: "team",
           memberNames: memberNames[index],
-          bibNumber: `F${String(index + 1).padStart(2, "0")}`,
+          bibNumber: `01-${String(index + 1).padStart(2, "0")}`,
           rank: index + 1,
           segmentSplits: []
         };
@@ -3624,7 +3624,7 @@
       if (isFinalTwentyTeamPreview(raceId)) {
         return mockHokaTwentyTeamLeaderboardPayload(
           raceId,
-          "HOKA 团队挑战赛 - 决赛"
+          "HOKA 团队挑战赛 - 上海决赛"
         );
       }
       if (raceId === "hoka-race-demo") {
@@ -3977,7 +3977,7 @@
             <td class="rank">${row.rank}</td>
             <td>
               <div class="athlete">
-                <strong>${escapeHtml(row.athleteName)}</strong>
+                <strong>${escapeHtml(entryType === "individual" || !row.bibNumber ? row.athleteName : `${row.bibNumber} · ${row.athleteName}`)}</strong>
                 ${memberLine}
                 ${detailLine}
               </div>

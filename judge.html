@@ -254,6 +254,8 @@
     .entry-check { display: grid; width: 44px; height: 44px; place-items: center; }
     .entry-check input { width: 21px; min-height: 21px; height: 21px; margin: 0; padding: 0; accent-color: var(--success); }
     .entry-name { margin: 0; font-size: 16px; line-height: 1.25; overflow-wrap: anywhere; }
+    .team-code { display: inline-block; margin: 0 8px 3px 0; color: var(--brand); font-size: 17px; font-weight: 950; }
+    body.hoka .team-code { color: #148300; }
     .member-names, .card-code, .state-detail { margin-top: 4px; color: var(--muted); font-size: 11px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
     .card-code { margin-top: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     .state { display: inline-flex; width: fit-content; min-height: 26px; align-items: center; border-radius: 999px; padding: 4px 8px; background: #e9eef2; color: #596776; font-size: 11px; font-weight: 900; }
@@ -575,7 +577,7 @@
     const demoRaceSessions = [
       { raceId: "hoka-race-sh", name: "HOKA 团队挑战赛 - 上海站" },
       { raceId: "hoka-race-hz", name: "HOKA 团队挑战赛 - 杭州站" },
-      { raceId: "hoka-race-final", name: "HOKA 团队挑战赛 - 决赛" },
+      { raceId: "hoka-race-final", name: "HOKA 团队挑战赛 - 上海决赛" },
       { raceId: "nfc-test-001", name: "HOKA 团队挑战赛 - 测试数据" }
     ];
     const judgeRoleOptions = [
@@ -627,6 +629,7 @@
         participantId,
         athleteName,
         cardCode,
+        bibNumber: options.bibNumber || `01-${String(participantId - 9100).padStart(2, "0")}`,
         entryType: options.entryType || "individual",
         memberNames: options.memberNames || [athleteName],
         status: options.status || "not_ready",
@@ -953,7 +956,7 @@
         if (filterStatus(entry) !== activeFilter) return false;
         if (isStationJudge() && !confirmableCheckpointForEntry(entry)) return false;
         if (!query) return true;
-        const haystack = [entry.athleteName, entry.cardCode, ...(entry.memberNames || [])].join(" ").toLowerCase();
+        const haystack = [entry.bibNumber, entry.athleteName, entry.cardCode, ...(entry.memberNames || [])].join(" ").toLowerCase();
         return haystack.includes(query);
       });
     }
@@ -1145,6 +1148,12 @@
       }
 
       const main = document.createElement("div");
+      if (entry.bibNumber) {
+        const teamCode = document.createElement("span");
+        teamCode.className = "team-code";
+        teamCode.textContent = entry.bibNumber;
+        main.append(teamCode);
+      }
       const name = document.createElement("h2");
       name.className = "entry-name";
       name.textContent = entry.athleteName;
@@ -1523,7 +1532,9 @@
       elements.startDescription.textContent = isDemoMode
         ? "确认后，所选参赛单位会立即使用同一个模拟开始时间。"
         : "确认后，所选参赛单位会立即写入同一个开始时间。";
-      elements.startParticipants.textContent = selected.map((entry) => entry.athleteName).join(" / ");
+      elements.startParticipants.textContent = selected
+        .map((entry) => `${entry.bibNumber ? `${entry.bibNumber} · ` : ""}${entry.athleteName}`)
+        .join(" / ");
       openModal(elements.startBackdrop);
       elements.confirmStartButton.focus();
     }
@@ -1544,7 +1555,7 @@
       elements.checkpointFields.hidden = mode !== "checkpoint";
       elements.operationReasonField.hidden = ["checkpoint", "rollback"].includes(mode);
       elements.operationReason.required = !["checkpoint", "rollback"].includes(mode);
-      elements.operationParticipant.textContent = `${entry.athleteName} · ${entry.cardCode}`;
+      elements.operationParticipant.textContent = `${entry.bibNumber ? `${entry.bibNumber} · ` : ""}${entry.athleteName} · ${entry.cardCode}`;
       const config = {
         adjustment: ["加减最终时间", "对已完成成绩增加罚时或减少时间。", "保存调整", "primary", "例如：动作判罚或现场复核"],
         manual: ["手动调整时间", "输入完整的开始时间和结束时间，原始刷卡记录不会被修改。", "保存手动时间", "primary", "例如：设备故障，依据备用计时记录"],
