@@ -580,6 +580,7 @@
       { raceId: "hoka-race-final", name: "HOKA 团队挑战赛 - 上海决赛" },
       { raceId: "hoka-race-demo", name: "HOKA 团队挑战赛 - 测试数据" }
     ];
+    const primaryRaceIds = new Set(demoRaceSessions.map((race) => race.raceId));
     const judgeRoleOptions = [
       { role: "admin", label: "全局总控" },
       { role: "start", label: "起点 / 发枪" },
@@ -840,6 +841,26 @@
     function raceDisplayName(race) {
       if (race?.raceId === "hoka-race-demo") return "HOKA 团队挑战赛 - 测试数据";
       return race?.name || race?.raceId || "未命名比赛";
+    }
+
+    function isManagedRaceId(raceId) {
+      if (primaryRaceIds.has(raceId)) return true;
+      const match = /^hoka-race-(\d{8})-\d{4}$/.exec(raceId);
+      if (!match) return false;
+      const today = new Date();
+      const todayId = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+      return match[1] >= todayId;
+    }
+
+    function managedRaces(races = []) {
+      const order = new Map(demoRaceSessions.map((race, index) => [race.raceId, index]));
+      return races
+        .filter((race) => race.raceId && !race.isTemplate && isManagedRaceId(race.raceId))
+        .sort((left, right) => {
+          const leftOrder = order.get(left.raceId) ?? demoRaceSessions.length;
+          const rightOrder = order.get(right.raceId) ?? demoRaceSessions.length;
+          return leftOrder - rightOrder || right.raceId.localeCompare(left.raceId);
+        });
     }
 
     function configureEntryBranding() {
@@ -1425,7 +1446,7 @@
 
     async function loadAuthRaces() {
       const payload = await readJson(await window.timingApiFetch("/api/races"));
-      const races = payload.races.filter((race) => race.raceId && !race.isTemplate && race.status !== "finalized");
+      const races = managedRaces(payload.races);
       elements.authRaceId.replaceChildren(
         new Option("请选择比赛场次", ""),
         ...races.map((race) => new Option(raceDisplayName(race), race.raceId))
@@ -1448,7 +1469,7 @@
       }
       const requested = preferredRaceId || new URLSearchParams(location.search).get("raceId") || "";
       const payload = await readJson(await window.timingApiFetch("/api/races"));
-      const races = payload.races.filter((race) => race.raceId && !race.isTemplate && race.status !== "finalized");
+      const races = managedRaces(payload.races);
       elements.raceId.replaceChildren(...races.map((race) => new Option(raceDisplayName(race), race.raceId)));
       elements.raceId.value = races.some((race) => race.raceId === requested) ? requested : races[0]?.raceId || "";
       syncResponsiveSelect(elements.raceId);

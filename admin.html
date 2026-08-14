@@ -598,7 +598,6 @@
         <label>
           比赛模板
           <select id="raceSessionTemplate">
-            <option value="fitmonster-hyrox-single">SRC Hyrox Simulation</option>
             <option value="hoka-race">Hoka Team Race</option>
           </select>
         </label>
@@ -624,9 +623,11 @@
         <label>
           比赛 / Race ID
           <select id="raceId">
-            <optgroup label="当前比赛">
-              <option value="fitmonster-hyrox-single">SRC Hyrox Simulation · 8 站 / 3 手机</option>
-              <option value="hoka-race">Hoka Race · 5 站 / 6 手机</option>
+            <optgroup label="HOKA 比赛">
+              <option value="hoka-race-sh">HOKA 团队挑战赛 - 上海站</option>
+              <option value="hoka-race-hz">HOKA 团队挑战赛 - 杭州站</option>
+              <option value="hoka-race-final">HOKA 团队挑战赛 - 上海决赛</option>
+              <option value="hoka-race-demo">HOKA 团队挑战赛 - 测试数据</option>
             </optgroup>
           </select>
         </label>
@@ -997,16 +998,6 @@
     const pageParams = new URLSearchParams(window.location.search);
     const officialRaces = [
       {
-        raceId: "fitmonster-hyrox-single",
-        name: "SRC Hyrox Simulation",
-        stationCount: 8,
-        startGroupSize: 1,
-        deviceCount: 3,
-        entryType: "individual",
-        mode: "three_reader_auto",
-        checkpointLayout: null
-      },
-      {
         raceId: "hoka-race",
         name: "Hoka Race",
         stationCount: 5,
@@ -1016,6 +1007,12 @@
         mode: "station_checkpoints",
         checkpointLayout: "station_boundaries"
       }
+    ];
+    const primaryRaceIds = [
+      "hoka-race-sh",
+      "hoka-race-hz",
+      "hoka-race-final",
+      "hoka-race-demo"
     ];
     let activeEntryType = "individual";
     let selectedRaceDefaultEntryType = "individual";
@@ -1622,7 +1619,11 @@
     }
 
     function isDatedRaceSession(raceId) {
-      return officialRaces.some((race) => raceId.startsWith(`${race.raceId}-`));
+      const match = /^hoka-race-(\d{8})-\d{4}$/.exec(raceId);
+      if (!match) return false;
+      const today = new Date();
+      const todayId = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+      return match[1] >= todayId;
     }
 
     function localDateTimeValue(date = new Date()) {
@@ -1661,31 +1662,25 @@
       knownRaceIds.clear();
       officialRaces.forEach((race) => knownRaceIds.add(race.raceId));
       (payload.races || []).forEach((race) => knownRaceIds.add(race.raceId));
-      const currentRaces = officialRaces.map((official) => ({
-        ...official,
-        ...(racesById.get(official.raceId) || {})
-      }));
-      const officialIds = new Set(officialRaces.map((race) => race.raceId));
+      const primaryRaces = primaryRaceIds
+        .map((raceId) => racesById.get(raceId))
+        .filter(Boolean);
       const datedRaces = (payload.races || [])
-        .filter((race) => !officialIds.has(race.raceId) && isDatedRaceSession(race.raceId))
+        .filter((race) => !primaryRaceIds.includes(race.raceId) && isDatedRaceSession(race.raceId))
         .sort((left, right) => right.raceId.localeCompare(left.raceId));
-      const otherRaces = (payload.races || [])
-        .filter((race) => !officialIds.has(race.raceId))
-        .filter((race) => !isDatedRaceSession(race.raceId))
-        .sort((left, right) => (left.name || left.raceId).localeCompare(right.name || right.raceId));
-      const groups = [buildRaceGroup("比赛模板（只读）", currentRaces)];
-      if (datedRaces.length) groups.push(buildRaceGroup("历史比赛场次", datedRaces));
-      if (otherRaces.length) groups.push(buildRaceGroup("其他 / 测试比赛", otherRaces));
+      const groups = [buildRaceGroup("HOKA 比赛", primaryRaces)];
+      if (datedRaces.length) groups.push(buildRaceGroup("新建比赛场次", datedRaces));
       raceIdSelect.replaceChildren(...groups);
 
       const requestedRaceId = preferredRaceId
         || pageParams.get("raceId")
         || pageParams.get("race")
         || datedRaces[0]?.raceId
-        || officialRaces[0].raceId;
-      raceIdSelect.value = racesById.has(requestedRaceId) || officialIds.has(requestedRaceId)
+        || "hoka-race-final";
+      const visibleRaceIds = new Set([...primaryRaces, ...datedRaces].map((race) => race.raceId));
+      raceIdSelect.value = visibleRaceIds.has(requestedRaceId)
         ? requestedRaceId
-        : officialRaces[0].raceId;
+        : primaryRaces[0]?.raceId || "";
       raceConfigId.value = selectedRaceId();
       updateRaceLinks(selectedRaceId());
     }
