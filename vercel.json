@@ -1,22 +1,7 @@
 {
-  "headers": [
-    {
-      "source": "/api/leaderboard",
-      "headers": [
-        {
-          "key": "x-vercel-enable-rewrite-caching",
-          "value": "1"
-        },
-        {
-          "key": "Vercel-CDN-Cache-Control",
-          "value": "max-age=2, stale-while-revalidate=15, stale-if-error=60"
-        }
-      ]
-    }
-  ],
   "rewrites": [
     {
-      "source": "/api/:path*",
+      "source": "/api/:path((?!leaderboard).*)",
       "destination": "https://lfzvkqwpekgtkcnpzbqj.supabase.co/functions/v1/timing-api/:path*"
     },
     {
