@@ -8,7 +8,9 @@ import server
 
 
 RACE_ID = "hoka-race-demo"
+ACCOUNT_SOURCE_RACE_ID = "nfc-test-001"
 CHECKPOINTS = server.build_station_boundary_checkpoints(5)
+EXPECTED_CARD_CODES = {f"HOKA-TEST-{index:03d}" for index in range(1, 21)}
 TEAM_NAMES = [
     "飞跃一队",
     "逐风小队",
@@ -102,6 +104,8 @@ def seed() -> dict:
     profile["created_at"] = iso(now)
     profile["updated_at"] = iso(now)
 
+    judge_account_count = 0
+    legacy_alias_removed = False
     with server.connect_db() as db:
         db.execute("BEGIN IMMEDIATE")
         for table in (
@@ -148,6 +152,81 @@ def seed() -> dict:
                 profile["updated_at"],
             ),
         )
+
+        legacy_cards = {
+            row["card_code"]
+            for row in db.execute(
+                "SELECT card_code FROM participants WHERE race_id = ?",
+                (ACCOUNT_SOURCE_RACE_ID,),
+            ).fetchall()
+        }
+        if legacy_cards == EXPECTED_CARD_CODES:
+            for table in (
+                "timing_events",
+                "result_adjustments",
+                "manual_results",
+                "participant_timing_controls",
+                "start_checkins",
+                "device_bindings",
+                "race_admin_actions",
+            ):
+                db.execute(
+                    f"DELETE FROM {table} WHERE race_id = ?",
+                    (ACCOUNT_SOURCE_RACE_ID,),
+                )
+            db.execute(
+                "DELETE FROM participants WHERE race_id = ?",
+                (ACCOUNT_SOURCE_RACE_ID,),
+            )
+            db.execute(
+                """
+                UPDATE race_profiles
+                SET name = ?, mode = 'two_reader_auto', station_count = 8,
+                    checkpoints_json = ?, entry_type = 'individual',
+                    status = 'active', finalized_at = NULL, updated_at = ?
+                WHERE race_id = ?
+                """,
+                (
+                    "Peoplearth Simulation · 001",
+                    json.dumps(server.build_two_reader_checkpoints(8)),
+                    iso(now),
+                    ACCOUNT_SOURCE_RACE_ID,
+                ),
+            )
+            legacy_alias_removed = True
+
+        source_accounts = db.execute(
+            "SELECT * FROM judge_station_accounts WHERE race_id = ? ORDER BY role",
+            (ACCOUNT_SOURCE_RACE_ID,),
+        ).fetchall()
+        for account in source_accounts:
+            db.execute(
+                """
+                INSERT INTO judge_station_accounts (
+                  race_id, role, username, password_hash, password_salt,
+                  display_name, active, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (race_id, role) DO UPDATE SET
+                  username = excluded.username,
+                  password_hash = excluded.password_hash,
+                  password_salt = excluded.password_salt,
+                  display_name = excluded.display_name,
+                  active = excluded.active,
+                  updated_at = excluded.updated_at
+                """,
+                (
+                    RACE_ID,
+                    account["role"],
+                    account["username"],
+                    account["password_hash"],
+                    account["password_salt"],
+                    account["display_name"],
+                    account["active"],
+                    account["created_at"],
+                    iso(now),
+                ),
+            )
+        judge_account_count = len(source_accounts)
 
         participant_ids = []
         for index, (team_name, member_names) in enumerate(
@@ -222,7 +301,7 @@ def seed() -> dict:
                     seconds=(index * 7 + checkpoint_index * 11) % 45,
                 )
                 metadata = server.checkpoint_metadata(checkpoint)
-                event_id = f"hoka-test-seed:{index:02d}:{checkpoint}"
+                event_id = f"{RACE_ID}:seed:{index:02d}:{checkpoint}"
                 raw_payload = {
                     "eventId": event_id,
                     "raceId": RACE_ID,
@@ -280,6 +359,8 @@ def seed() -> dict:
         "notReady": 3,
         "finished": 2,
         "dnf": 1,
+        "judgeAccounts": judge_account_count,
+        "legacyAliasRemoved": legacy_alias_removed,
     }
 
 

@@ -62,7 +62,7 @@ audited timing decisions. The first phone checkpoint (`START`) only confirms tha
 participant is ready; the judge freely selects ready entries and starts them with the
 shared confirmation-click time.
 The leaderboard selector is intentionally limited to the Shanghai, Hangzhou, and Final
-HOKA stages plus one browser-only test dataset.
+HOKA stages plus one Supabase-backed test dataset.
 
 API endpoint:
 
@@ -180,7 +180,7 @@ Ball. Wall Ball is the final segment; there is no run after it.
 Leaderboard race choices:
 
 ```text
-hoka-race-demo              browser-only 20-team HOKA test data
+hoka-race-demo              Supabase-backed 20-team HOKA test data
 hoka-race-sh                HOKA Shanghai live data
 hoka-race-hz                HOKA Hangzhou live data
 hoka-race-final             HOKA Final live data
@@ -195,8 +195,8 @@ http://localhost:8787/leaderboard.html?raceId=hoka-race-final&preview=final-20
 Other legacy profiles may remain in the operational database for audit or migration,
 but `leaderboard.html` does not add them to the public screen selector.
 
-Mock races cannot be cleared because they never write to the database. An official
-race requires the administrator clear code and two confirmation clicks before
+The HOKA test race is stored under `hoka-race-demo` and can be reset independently.
+An official race requires the administrator clear code and two confirmation clicks before
 `POST /api/reset-race` deletes its participants and timing events. The selected
 Race ID is sent by the page automatically; the user does not need to type it.
 `POST /api/reset-timing` uses the same two-step administrator confirmation but only

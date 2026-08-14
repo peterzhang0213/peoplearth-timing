@@ -269,8 +269,8 @@ Purpose:
 - Show selected-race totals for participants, check-ins, finishes, timing events,
   and rejected/error events.
 - Link directly to the selected race's live leaderboard.
-- The leaderboard selector exposes two browser-only mock races plus the FitMonster
-  and Hoka official Supabase races.
+- The leaderboard selector exposes the browser-only SRC mock, the Supabase-backed
+  HOKA test race, and the FitMonster and HOKA official Supabase races.
 - Front-desk staff create a dated race session from an official template before each
   real event. The session Race ID includes local event date/time (for example,
   `hoka-race-20260725-0900`) and is shared by registration, timing phones, and the
@@ -675,7 +675,8 @@ Important production correction:
 - The local Python API still uses SQLite as its primary race engine; cloud-created
   participants are not pulled back into SQLite automatically.
 - No official deployment config for 火山云 yet.
-- Leaderboard selection includes SRC and HOKA browser-only demos plus the live and template profiles.
+- Leaderboard selection includes the SRC browser-only demo, the Supabase-backed HOKA
+  test race, and the live and template profiles.
 - Local database currently contains test records from development.
 
 ## Recommended Next Steps

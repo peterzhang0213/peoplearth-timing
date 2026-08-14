@@ -578,7 +578,7 @@
       { raceId: "hoka-race-sh", name: "HOKA 团队挑战赛 - 上海站" },
       { raceId: "hoka-race-hz", name: "HOKA 团队挑战赛 - 杭州站" },
       { raceId: "hoka-race-final", name: "HOKA 团队挑战赛 - 上海决赛" },
-      { raceId: "nfc-test-001", name: "HOKA 团队挑战赛 - 测试数据" }
+      { raceId: "hoka-race-demo", name: "HOKA 团队挑战赛 - 测试数据" }
     ];
     const judgeRoleOptions = [
       { role: "admin", label: "全局总控" },
@@ -833,13 +833,12 @@
     });
 
     function isHokaRace(raceId) {
-      return raceId === "nfc-test-001"
-        || raceId === "hoka-race"
+      return raceId === "hoka-race"
         || String(raceId || "").startsWith("hoka-race-");
     }
 
     function raceDisplayName(race) {
-      if (race?.raceId === "nfc-test-001") return "HOKA 团队挑战赛 - 测试数据";
+      if (race?.raceId === "hoka-race-demo") return "HOKA 团队挑战赛 - 测试数据";
       return race?.name || race?.raceId || "未命名比赛";
     }
 
