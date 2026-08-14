@@ -1006,7 +1006,7 @@
       if (role === "start") return "负责待发队伍的批量发枪和起点人工确认。";
       if (role === "station_5") return "仅显示下一步为站点 5 结束的队伍；确认后直接记录冲线时间。";
       const stationNumber = String(role).replace("station_", "");
-      return `仅显示下一步为站点 ${stationNumber} 的队伍，避免误触其他站点。`;
+      return `仅显示下一步为站点 ${stationNumber} 结束的队伍，避免误触其他站点。`;
     }
 
     function checkpointsForRole(role) {
@@ -1055,6 +1055,19 @@
           : `${judgeDisplayName} · 岗位已锁定`;
     }
 
+    function updateBatchScopeText() {
+      const scope = currentJudgeScope();
+      const scopedCheckpoints = allowedJudgeCheckpoints();
+      const checkpointScope = scopedCheckpoints.length
+        ? scopedCheckpoints.map(checkpointLabel).join(" / ")
+        : roleLabel(scope);
+      elements.batchScopeText.textContent = isStationJudge()
+        ? `${checkpointScope} · 仅显示下一步可由本站确认的队伍`
+        : scope === "start"
+          ? "起点裁判 · 仅显示待发和未核验队伍"
+          : "全局管理员可确认任意下一站并撤回误触";
+    }
+
     function applyJudgeRoleView() {
       updateRoleControls();
       const scope = currentJudgeScope();
@@ -1068,15 +1081,7 @@
         button.hidden = !allowedFilters.includes(button.dataset.filter);
         button.setAttribute("aria-pressed", String(button.dataset.filter === activeFilter));
       });
-      const scopedCheckpoints = allowedJudgeCheckpoints();
-      const checkpointScope = scopedCheckpoints.length
-        ? scopedCheckpoints.map(checkpointLabel).join(" / ")
-        : roleLabel(scope);
-      elements.batchScopeText.textContent = isStationJudge()
-        ? `${checkpointScope} · 仅显示下一步可由本站确认的队伍`
-        : scope === "start"
-          ? "起点裁判 · 仅显示待发和未核验队伍"
-          : "全局管理员可确认任意下一站并撤回误触";
+      updateBatchScopeText();
       elements.raceId.disabled = false;
       [elements.bindingLink, elements.nfcLink, elements.demoLink].forEach((link) => {
         link.hidden = !isAdminJudge();
@@ -1502,6 +1507,7 @@
         const results = new Map((leaderboardPayload.leaderboard || []).map((result) => [Number(result.participantId), result]));
         activeRace = queuePayload.race;
         updateRoleControls();
+        updateBatchScopeText();
         entries = (queuePayload.entries || []).map((entry) => ({ ...entry, result: results.get(Number(entry.participantId)) || null }));
         const entryUnit = activeRace.entryType === "team" ? "支队伍" : "人";
         elements.raceName.textContent = `${raceDisplayName({ raceId: activeRace.raceId || elements.raceId.value, name: activeRace.name })} · ${entries.length} ${entryUnit}`;
