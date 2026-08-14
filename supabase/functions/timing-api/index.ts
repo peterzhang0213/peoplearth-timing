@@ -19,6 +19,13 @@ const JUDGE_ROLE_LABELS: Record<string, string> = {
 };
 const JUDGE_TOKEN_TTL_SECONDS = 12 * 60 * 60;
 const JUDGE_PASSWORD_ITERATIONS = 240_000;
+const HOKA_BOUNDARY_RACE_IDS = new Set([
+  "hoka-race",
+  "hoka-race-sh",
+  "hoka-race-hz",
+  "hoka-race-final",
+  "hoka-race-demo",
+]);
 
 function jsonResponse(payload: JsonObject, status = 200): Response {
   return new Response(JSON.stringify(payload), {
@@ -461,6 +468,22 @@ function checkpointMetadata(checkpoint: string): JsonObject {
 
 function defaultRaceProfile(raceId: string): DatabaseRow {
   const now = new Date().toISOString();
+  if (HOKA_BOUNDARY_RACE_IDS.has(raceId)) {
+    return {
+      race_id: raceId,
+      name: raceId,
+      mode: "station_checkpoints",
+      station_count: 5,
+      start_group_size: 1,
+      checkpoints: buildStationBoundaryCheckpoints(5),
+      entry_type: "team",
+      status: "active",
+      finalized_at: null,
+      is_template: raceId === "hoka-race",
+      created_at: now,
+      updated_at: now,
+    };
+  }
   return {
     race_id: raceId,
     name: raceId,
@@ -468,7 +491,7 @@ function defaultRaceProfile(raceId: string): DatabaseRow {
     station_count: 8,
     start_group_size: 1,
     checkpoints: buildCheckpoints("two_reader_auto", 8),
-    entry_type: raceId === "hoka-race" ? "team" : "individual",
+    entry_type: "individual",
     status: "active",
     finalized_at: null,
     is_template: false,

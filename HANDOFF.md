@@ -81,6 +81,9 @@ supabase/migrations/20260730090000_add_start_groups.sql
 supabase/migrations/20260810090000_allow_free_start_selection.sql
 supabase/migrations/20260811090000_add_judge_station_accounts.sql
 supabase/migrations/20260811110000_enable_hoka_full_station_checkpoints.sql
+supabase/migrations/20260814090000_add_optional_start_batch.sql
+supabase/migrations/20260814110000_restore_hoka_station_boundaries.sql
+supabase/migrations/20260814120000_restore_nfc_test_simulation.sql
 ```
 
 It creates these RLS-protected tables:
@@ -423,7 +426,8 @@ three_reader_auto
 station_checkpoints
   Each phone is fixed to one checkpoint.
   The server accepts only START -> STATION_n_START -> ... -> END.
-  Hoka omits STATION_1_START because its START phone also starts Station 1.
+  Hoka uses boundary checkpoints: START begins Station 1, STATION_2_START through
+  STATION_5_START close Stations 1 through 4, and END closes Station 5.
 ~~~
 
 Official live profiles:
@@ -444,21 +448,21 @@ https://timing.hybridtraining.cn/web-nfc-timing-test.html?raceId=fitmonster-hyro
 Hoka scanner URLs:
 
 ~~~text
-https://timing.hybridtraining.cn/web-nfc-timing-test.html?raceId=hoka-race&deviceId=hoka-station-1&checkpoint=START
-https://timing.hybridtraining.cn/web-nfc-timing-test.html?raceId=hoka-race&deviceId=hoka-station-2&checkpoint=STATION_2_START
-https://timing.hybridtraining.cn/web-nfc-timing-test.html?raceId=hoka-race&deviceId=hoka-station-3&checkpoint=STATION_3_START
-https://timing.hybridtraining.cn/web-nfc-timing-test.html?raceId=hoka-race&deviceId=hoka-station-4&checkpoint=STATION_4_START
-https://timing.hybridtraining.cn/web-nfc-timing-test.html?raceId=hoka-race&deviceId=hoka-station-5&checkpoint=STATION_5_START
-https://timing.hybridtraining.cn/web-nfc-timing-test.html?raceId=hoka-race&deviceId=hoka-end&checkpoint=END
+https://timing.hybridtraining.cn/web-nfc-timing-test.html?raceId=hoka-race&deviceId=hoka-start&checkpoint=START
+https://timing.hybridtraining.cn/web-nfc-timing-test.html?raceId=hoka-race&deviceId=hoka-station-1-end&checkpoint=STATION_2_START
+https://timing.hybridtraining.cn/web-nfc-timing-test.html?raceId=hoka-race&deviceId=hoka-station-2-end&checkpoint=STATION_3_START
+https://timing.hybridtraining.cn/web-nfc-timing-test.html?raceId=hoka-race&deviceId=hoka-station-3-end&checkpoint=STATION_4_START
+https://timing.hybridtraining.cn/web-nfc-timing-test.html?raceId=hoka-race&deviceId=hoka-station-4-end&checkpoint=STATION_5_START
+https://timing.hybridtraining.cn/web-nfc-timing-test.html?raceId=hoka-race&deviceId=hoka-station-5-finish&checkpoint=END
 ~~~
 
 The scanner fetches `GET /api/race-config?raceId=...` on startup and automatically
 selects auto/manual mode and the profile's checkpoint list. The operator must then
 confirm the Device ID and selected role/checkpoint with **绑定本机角色** before
-starting NFC. Hoka needs 6 devices:
-Station 1 also records START, Stations 2-5 each end the previous segment and start
-the next, and END closes Station 5. FitMonster needs 3 devices: RUN_OUT, RUN_IN, and
-FINISH. The scanner Race ID dropdown lists featured live races first and groups
+starting NFC. Hoka needs 6 devices: START begins Station 1, each Station 1-4 judge
+confirms the end of that station, and the Station 5 judge records END as the
+finish. FitMonster needs 3 devices: RUN_OUT, RUN_IN, and FINISH. The scanner Race
+ID dropdown lists featured live races first and groups
 older development profiles under **其他 / 测试比赛**.
 
 Timing event payload example:

@@ -7,8 +7,8 @@ from datetime import datetime, timedelta, timezone
 import server
 
 
-RACE_ID = "nfc-test-001"
-CHECKPOINTS = server.build_station_checkpoints(5)
+RACE_ID = "hoka-race-demo"
+CHECKPOINTS = server.build_station_boundary_checkpoints(5)
 TEAM_NAMES = [
     "飞跃一队",
     "逐风小队",
@@ -64,17 +64,17 @@ LATEST_CHECKPOINTS = [
     None,
     "START",
     "START",
-    "STATION_1_START",
-    "STATION_1_START",
     "STATION_2_START",
     "STATION_2_START",
     "STATION_3_START",
     "STATION_3_START",
     "STATION_4_START",
     "STATION_4_START",
+    "STATION_5_START",
+    "STATION_5_START",
     "END",
     "END",
-    "STATION_3_START",
+    "STATION_4_START",
     "START",
 ]
 

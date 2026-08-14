@@ -155,8 +155,7 @@ JUDGE_TOKEN_TTL_SECONDS = 12 * 60 * 60
 JUDGE_PASSWORD_ITERATIONS = 240_000
 RACE_MODES = {"two_reader_auto", "three_reader_auto", "station_checkpoints"}
 ENTRY_TYPES = {"individual", "doubles", "team"}
-HOKA_FULL_CHECKPOINT_RACE_IDS = {
-    "nfc-test-001",
+HOKA_BOUNDARY_CHECKPOINT_RACE_IDS = {
     "hoka-race",
     "hoka-race-sh",
     "hoka-race-hz",
@@ -580,14 +579,23 @@ def make_race_profile(
 
 
 def default_race_profile(race_id: str) -> dict:
-    entry_type = "team" if race_id == "hoka-race" else "individual"
+    if race_id in HOKA_BOUNDARY_CHECKPOINT_RACE_IDS:
+        return make_race_profile(
+            race_id,
+            race_id,
+            "station_checkpoints",
+            5,
+            checkpoints=build_station_boundary_checkpoints(5),
+            entry_type="team",
+            is_template=race_id == "hoka-race",
+        )
     return make_race_profile(
         race_id,
         race_id,
         "two_reader_auto",
         8,
-        entry_type=entry_type,
-        is_template=race_id in {"fitmonster-hyrox-single", "hoka-race"},
+        entry_type="individual",
+        is_template=race_id == "fitmonster-hyrox-single",
     )
 
 
@@ -595,18 +603,18 @@ def ensure_default_race_profiles(db: sqlite3.Connection) -> None:
     for race_id, name, mode, station_count, checkpoints, entry_type in (
         (
             "nfc-test-001",
-            "HOKA 团队挑战赛 - 测试数据",
-            "station_checkpoints",
-            5,
-            build_station_checkpoints(5),
-            "team",
+            "Peoplearth Simulation · 001",
+            "two_reader_auto",
+            8,
+            build_two_reader_checkpoints(8),
+            "individual",
         ),
         (
             "hoka-race-sh",
             "HOKA 团队挑战赛 - 上海站",
             "station_checkpoints",
             5,
-            build_station_checkpoints(5),
+            build_station_boundary_checkpoints(5),
             "team",
         ),
         (
@@ -614,7 +622,7 @@ def ensure_default_race_profiles(db: sqlite3.Connection) -> None:
             "HOKA 团队挑战赛 - 杭州站",
             "station_checkpoints",
             5,
-            build_station_checkpoints(5),
+            build_station_boundary_checkpoints(5),
             "team",
         ),
         (
@@ -622,7 +630,7 @@ def ensure_default_race_profiles(db: sqlite3.Connection) -> None:
             "HOKA 团队挑战赛 - 上海决赛",
             "station_checkpoints",
             5,
-            build_station_checkpoints(5),
+            build_station_boundary_checkpoints(5),
             "team",
         ),
     ):
@@ -656,8 +664,8 @@ def ensure_default_race_profiles(db: sqlite3.Connection) -> None:
             ),
         )
 
-    hoka_checkpoints = json.dumps(build_station_checkpoints(5))
-    placeholders = ",".join("?" for _ in HOKA_FULL_CHECKPOINT_RACE_IDS)
+    hoka_checkpoints = json.dumps(build_station_boundary_checkpoints(5))
+    placeholders = ",".join("?" for _ in HOKA_BOUNDARY_CHECKPOINT_RACE_IDS)
     db.execute(
         f"UPDATE race_profiles SET mode = 'station_checkpoints', station_count = 5, "
         f"checkpoints_json = ?, entry_type = 'team', updated_at = ? "
@@ -665,17 +673,17 @@ def ensure_default_race_profiles(db: sqlite3.Connection) -> None:
         (
             hoka_checkpoints,
             utc_now(),
-            *sorted(HOKA_FULL_CHECKPOINT_RACE_IDS),
+            *sorted(HOKA_BOUNDARY_CHECKPOINT_RACE_IDS),
             hoka_checkpoints,
         ),
     )
     db.execute(
         "UPDATE race_profiles SET name = ?, updated_at = ? WHERE race_id = ? AND name <> ?",
         (
-            "HOKA 团队挑战赛 - 测试数据",
+            "Peoplearth Simulation · 001",
             utc_now(),
             "nfc-test-001",
-            "HOKA 团队挑战赛 - 测试数据",
+            "Peoplearth Simulation · 001",
         ),
     )
     db.execute(

@@ -478,6 +478,30 @@ class TimingApiTests(unittest.TestCase):
             ["STATION_5_START", "END"],
         )
 
+    def test_station_boundary_judge_roles_confirm_each_station_end(self):
+        profile = server.make_race_profile(
+            "hoka-boundary-role-test",
+            "HOKA Boundary Role Test",
+            "station_checkpoints",
+            5,
+            checkpoints=server.build_station_boundary_checkpoints(5),
+            entry_type="team",
+        )
+        self.assertEqual(server.judge_role_checkpoints(profile, "start"), ["START"])
+        self.assertEqual(
+            server.judge_role_checkpoints(profile, "station_1"),
+            ["STATION_2_START"],
+        )
+        self.assertEqual(
+            server.judge_role_checkpoints(profile, "station_2"),
+            ["STATION_3_START"],
+        )
+        self.assertEqual(
+            server.judge_role_checkpoints(profile, "station_5"),
+            ["END"],
+        )
+        self.assertEqual(server.manual_checkpoint_station_ids(profile, "END"), ["END"])
+
     def test_api_advances_full_race_and_finishes_station_eight(self):
         latest = None
         for index in range(17):
@@ -2030,11 +2054,11 @@ class DefaultRaceProfileTests(unittest.TestCase):
                 "nfc-test-001",
             },
         )
-        self.assertEqual(test_profile["name"], "HOKA 团队挑战赛 - 测试数据")
-        self.assertEqual(test_profile["mode"], "station_checkpoints")
-        self.assertEqual(test_profile["station_count"], 5)
-        self.assertEqual(test_profile["entry_type"], "team")
-        self.assertEqual(test_profile["checkpoints"], server.build_station_checkpoints(5))
+        self.assertEqual(test_profile["name"], "Peoplearth Simulation · 001")
+        self.assertEqual(test_profile["mode"], "two_reader_auto")
+        self.assertEqual(test_profile["station_count"], 8)
+        self.assertEqual(test_profile["entry_type"], "individual")
+        self.assertEqual(test_profile["checkpoints"], server.build_two_reader_checkpoints(8))
 
 
 class RaceProfileTests(TimingApiTests):
@@ -2116,10 +2140,11 @@ class RaceProfileTests(TimingApiTests):
         hoka = self.request_json("/api/race-config?raceId=hoka-race")["race"]
         self.assertEqual(hoka["entryType"], "team")
         hoka_sh = self.request_json("/api/race-config?raceId=hoka-race-sh")["race"]
-        self.assertEqual(hoka_sh["checkpointLayout"], "station_starts")
+        self.assertEqual(hoka["checkpointLayout"], "station_boundaries")
+        self.assertEqual(hoka_sh["checkpointLayout"], "station_boundaries")
         self.assertEqual(
             hoka_sh["checkpoints"],
-            ["START", "STATION_1_START", "STATION_2_START", "STATION_3_START",
+            ["START", "STATION_2_START", "STATION_3_START",
              "STATION_4_START", "STATION_5_START", "END"],
         )
 

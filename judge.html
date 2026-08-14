@@ -595,8 +595,8 @@
       raceId: initialDemoSession.raceId,
       name: initialDemoSession.name,
       stationCount: 5,
-      checkpointLayout: "station_starts",
-      checkpoints: ["START", "STATION_1_START", "STATION_2_START", "STATION_3_START", "STATION_4_START", "STATION_5_START", "END"]
+      checkpointLayout: "station_boundaries",
+      checkpoints: ["START", "STATION_2_START", "STATION_3_START", "STATION_4_START", "STATION_5_START", "END"]
     };
     const selectedIds = new Set();
     const deviceId = `judge-${localStorage.getItem("src-judge-device-id") || crypto.randomUUID()}`;
@@ -671,7 +671,7 @@
           result: {
             status: "racing",
             elapsedMs: 812000,
-            latestCheckpoint: "STATION_3_START",
+            latestCheckpoint: "STATION_4_START",
             startTime: demoIsoAgo(812000),
             finishTime: null
           }
@@ -684,7 +684,7 @@
           result: {
             status: "paused",
             elapsedMs: 487000,
-            latestCheckpoint: "STATION_2_START",
+            latestCheckpoint: "STATION_3_START",
             startTime: demoIsoAgo(533000),
             finishTime: null
           }
@@ -716,7 +716,7 @@
           result: {
             status: "dnf",
             elapsedMs: 1040000,
-            latestCheckpoint: "STATION_4_START",
+            latestCheckpoint: "STATION_5_START",
             startTime: demoIsoAgo(1160000),
             finishTime: null
           }
@@ -742,7 +742,7 @@
           result: {
             status: "racing",
             elapsedMs: 628000,
-            latestCheckpoint: "STATION_1_START",
+            latestCheckpoint: "STATION_2_START",
             startTime: demoIsoAgo(628000),
             finishTime: null
           }
@@ -755,7 +755,7 @@
           result: {
             status: "racing",
             elapsedMs: 1046000,
-            latestCheckpoint: "STATION_4_START",
+            latestCheckpoint: "STATION_5_START",
             startTime: demoIsoAgo(1046000),
             finishTime: null
           }
@@ -984,7 +984,7 @@
     function roleDescription(role) {
       if (role === "admin") return "可查看全部队伍、确认任意下一站，并撤回最近一次站点确认。";
       if (role === "start") return "负责待发队伍的批量发枪和起点人工确认。";
-      if (role === "station_5") return "仅显示下一步为站点 5 的队伍；确认后同时记录站点 5 与终点。";
+      if (role === "station_5") return "仅显示下一步为站点 5 结束的队伍；确认后直接记录冲线时间。";
       const stationNumber = String(role).replace("station_", "");
       return `仅显示下一步为站点 ${stationNumber} 的队伍，避免误触其他站点。`;
     }
@@ -1105,7 +1105,13 @@
     }
 
     function checkpointActionLabel(checkpoint) {
-      if (checkpoint === "END" || checkpointRecordsFinish(checkpoint)) return "确认冲线";
+      if (checkpoint === "END") {
+        if (activeRace?.checkpointLayout === "station_boundaries") {
+          return `确认站点 ${Number(activeRace.stationCount || demoRace.stationCount)} 结束 / 冲线`;
+        }
+        return "确认冲线";
+      }
+      if (checkpointRecordsFinish(checkpoint)) return "确认冲线";
       const label = checkpointLabel(checkpoint);
       return `确认${label.replace(/\s确认$/, "")}`;
     }
@@ -1512,6 +1518,9 @@
       if (checkpoint === "END") return "终点";
       const match = String(checkpoint).match(/^STATION_(\d+)_(ENTER|EXIT|START)$/);
       if (!match) return checkpoint;
+      if (activeRace?.checkpointLayout === "station_boundaries" && match[2] === "START") {
+        return `站点 ${Number(match[1]) - 1} 结束`;
+      }
       const typeLabel = { ENTER: "进站", EXIT: "出站", START: "确认" }[match[2]] || match[2];
       return `站点 ${match[1]} ${typeLabel}`;
     }

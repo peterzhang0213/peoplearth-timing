@@ -1014,7 +1014,7 @@
         deviceCount: 6,
         entryType: "team",
         mode: "station_checkpoints",
-        checkpointLayout: "station_starts"
+        checkpointLayout: "station_boundaries"
       }
     ];
     let activeEntryType = "individual";
@@ -1031,11 +1031,11 @@
     let adminAuthCode = "";
     const judgeAccountRoles = [
       ["start", "开始", "START"],
-      ["station_1", "站点 1", "STATION_1_START"],
-      ["station_2", "站点 2", "STATION_2_START"],
-      ["station_3", "站点 3", "STATION_3_START"],
-      ["station_4", "站点 4", "STATION_4_START"],
-      ["station_5", "站点 5 / 冲线", "STATION_5_START / END"]
+      ["station_1", "站点 1", "站点 1 结束"],
+      ["station_2", "站点 2", "站点 2 结束"],
+      ["station_3", "站点 3", "站点 3 结束"],
+      ["station_4", "站点 4", "站点 4 结束"],
+      ["station_5", "站点 5 / 冲线", "站点 5 结束 / 终点"]
     ];
     const knownRaceIds = new Set(officialRaces.map((race) => race.raceId));
 

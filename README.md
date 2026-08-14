@@ -224,9 +224,10 @@ station (including the finish) for a started participant. The selected timestamp
 an accepted `timing_events` row with the judge reason and device ID, so it immediately
 appears in checkpoint splits and leaderboard progress. Earlier and later checkpoints
 remain locked. Administrators can configure six race-scoped judge accounts in
-`admin.html`: `start`, `station_1` through `station_5`. For HOKA's full-station
-layout these map to `START`, `STATION_1_START` through `STATION_5_START`, and `END`.
-The station 5 account confirms both `STATION_5_START` and the following `END` checkpoint.
+`admin.html`: `start`, `station_1` through `station_5`. For HOKA's boundary layout
+these map to `START`, `STATION_2_START` through `STATION_5_START`, and `END`:
+START begins station 1, each station account confirms that station's end, and
+station 5 writes `END` as the finish.
 Station accounts receive a short-lived signed token after login and cannot call another
 station's endpoint. The global account uses username `admin` with the configured
 administrator password. In `judge.html`, station accounts are locked to their assigned
