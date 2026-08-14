@@ -49,7 +49,7 @@ module.exports = async function leaderboard(request, response) {
     response.statusCode = upstream.status;
     response.setHeader("Content-Type", upstream.headers.get("content-type") || "application/json; charset=utf-8");
     if (upstream.ok) {
-      response.setHeader("Cache-Control", "public, max-age=0, s-maxage=2, stale-while-revalidate=15");
+      response.setHeader("Cache-Control", "public, max-age=0, s-maxage=2, stale-while-revalidate=86400");
     } else {
       response.setHeader("Cache-Control", "no-store");
     }

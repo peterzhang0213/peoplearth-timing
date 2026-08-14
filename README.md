@@ -35,6 +35,13 @@ Live health check:
 https://timing.hybridtraining.cn/api/health
 ```
 
+The public leaderboard is served through a Vercel function in Tokyo (`hnd1`), the
+same cloud region as Supabase. Successful responses use a 2-second shared CDN cache
+and retain the last successful snapshot for background revalidation, so a traffic
+spike or brief upstream interruption does not send every viewer directly to the
+database. Open the production leaderboard before sharing it with spectators and do
+not deploy during the live race unless an emergency fix is required.
+
 ## Run Timing API
 
 ```bash

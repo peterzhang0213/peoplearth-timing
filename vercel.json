@@ -1,4 +1,10 @@
 {
+  "functions": {
+    "api/leaderboard.js": {
+      "maxDuration": 10,
+      "regions": ["hnd1"]
+    }
+  },
   "rewrites": [
     {
       "source": "/api/:path((?!leaderboard).*)",
