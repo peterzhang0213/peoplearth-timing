@@ -2238,7 +2238,8 @@
     let lastSuccessfulLeaderboard = null;
     let renderedLeaderboardRaceId = null;
     let leaderboardNowMs = Date.now();
-    const LEADERBOARD_REFRESH_INTERVAL_MS = 3000;
+    const LEADERBOARD_REFRESH_INTERVAL_MS = 10000;
+    const LEADERBOARD_REFRESH_JITTER_MS = 2000;
     const LEADERBOARD_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
     const adDeck = document.querySelector("#adDeck");
     const adStageContent = document.querySelector("#adStageContent");
@@ -3417,7 +3418,7 @@
             <div class="hoka-mobile-identity">
               <span class="hoka-mobile-rank">#${escapeHtml(row.rank)}</span>
               <div class="hoka-mobile-title">
-                <div class="hoka-mobile-name">${escapeHtml(row.bibNumber ? `${row.bibNumber} · ${row.athleteName}` : row.athleteName)}</div>
+                <div class="hoka-mobile-name">${escapeHtml(row.athleteName)}</div>
                 ${members}
               </div>
             </div>
@@ -3977,7 +3978,7 @@
             <td class="rank">${row.rank}</td>
             <td>
               <div class="athlete">
-                <strong>${escapeHtml(entryType === "individual" || !row.bibNumber ? row.athleteName : `${row.bibNumber} · ${row.athleteName}`)}</strong>
+                <strong>${escapeHtml(row.athleteName)}</strong>
                 ${memberLine}
                 ${detailLine}
               </div>
@@ -4418,8 +4419,21 @@
       await refreshLoop(true);
     }
 
+    function scheduleLeaderboardRefresh() {
+      const delayMs = LEADERBOARD_REFRESH_INTERVAL_MS
+        + Math.floor(Math.random() * LEADERBOARD_REFRESH_JITTER_MS);
+      window.setTimeout(async () => {
+        if (document.visibilityState === "visible") await refreshLoop();
+        scheduleLeaderboardRefresh();
+      }, delayMs);
+    }
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") refreshLoop(true);
+    });
+
     initializeLeaderboard();
-    setInterval(refreshLoop, LEADERBOARD_REFRESH_INTERVAL_MS);
+    scheduleLeaderboardRefresh();
     setInterval(updateLiveDurations, 250);
     setInterval(tickAds, 120);
   </script>

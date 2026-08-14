@@ -256,7 +256,7 @@ permanent `finalized_at` timestamp, freezes all running durations at that instan
 and rejects any later NFC taps. Finished entries rank by adjusted time, started but
 unfinished entries become DNF and rank by progress then frozen elapsed time, and
 entries without a START become DNS. The finalized leaderboard continues refreshing
-every five seconds so post-race penalties and credits appear without advancing any
+every 10-12 seconds so post-race penalties and credits appear without advancing any
 frozen clocks.
 
 If a race was ended accidentally, the same leaderboard button changes to **Reopen

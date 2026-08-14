@@ -1501,6 +1501,7 @@
         ]);
         const results = new Map((leaderboardPayload.leaderboard || []).map((result) => [Number(result.participantId), result]));
         activeRace = queuePayload.race;
+        updateRoleControls();
         entries = (queuePayload.entries || []).map((entry) => ({ ...entry, result: results.get(Number(entry.participantId)) || null }));
         const entryUnit = activeRace.entryType === "team" ? "支队伍" : "人";
         elements.raceName.textContent = `${raceDisplayName({ raceId: activeRace.raceId || elements.raceId.value, name: activeRace.name })} · ${entries.length} ${entryUnit}`;
