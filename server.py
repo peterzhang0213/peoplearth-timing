@@ -3302,7 +3302,6 @@ class TimingHandler(SimpleHTTPRequestHandler):
             participant_id = int(payload.get("participantId"))
             adjustment_seconds = int(payload.get("adjustmentSeconds"))
             reason = str(payload.get("reason") or "").strip()
-            supplied_code = str(payload.get("adminCode") or "")
             configured_code = leaderboard_clear_code()
             if len(configured_code) < 8:
                 self.send_json(
@@ -3324,9 +3323,10 @@ class TimingHandler(SimpleHTTPRequestHandler):
                 raise ValueError("adjustmentSeconds must be between -86400 and 86400 and cannot be zero")
             if len(reason) < 2 or len(reason) > 500:
                 raise ValueError("reason must be between 2 and 500 characters")
-            if not supplied_code or not hmac.compare_digest(supplied_code, configured_code):
+            authorization = judge_request_authorization(payload, race_id)
+            if not authorization or authorization.get("role") != "admin":
                 self.send_json(
-                    {"ok": False, "error": "Invalid administrator code"},
+                    {"ok": False, "error": "Administrator authorization is required"},
                     HTTPStatus.FORBIDDEN,
                 )
                 return
@@ -3450,7 +3450,6 @@ class TimingHandler(SimpleHTTPRequestHandler):
             participant_id = int(payload.get("participantId"))
             entry_mode = str(payload.get("entryMode") or "").strip()
             reason = str(payload.get("reason") or "").strip()
-            supplied_code = str(payload.get("adminCode") or "")
             configured_code = leaderboard_clear_code()
             if len(configured_code) < 8:
                 self.send_json(
@@ -3470,9 +3469,10 @@ class TimingHandler(SimpleHTTPRequestHandler):
                 raise ValueError("entryMode must be start_finish or elapsed")
             if len(reason) < 2 or len(reason) > 500:
                 raise ValueError("reason must be between 2 and 500 characters")
-            if not supplied_code or not hmac.compare_digest(supplied_code, configured_code):
+            authorization = judge_request_authorization(payload, race_id)
+            if not authorization or authorization.get("role") != "admin":
                 self.send_json(
-                    {"ok": False, "error": "Invalid administrator code"},
+                    {"ok": False, "error": "Administrator authorization is required"},
                     HTTPStatus.FORBIDDEN,
                 )
                 return
@@ -3801,7 +3801,6 @@ class TimingHandler(SimpleHTTPRequestHandler):
             participant_id = int(payload.get("participantId"))
             action = str(payload.get("action") or "").strip().lower()
             reason = str(payload.get("reason") or "").strip()
-            supplied_code = str(payload.get("adminCode") or "")
             configured_code = leaderboard_clear_code()
             if len(configured_code) < 8:
                 self.send_json(
@@ -3821,9 +3820,10 @@ class TimingHandler(SimpleHTTPRequestHandler):
                 raise ValueError("action must be pause, resume, dnf, or restore")
             if len(reason) < 2 or len(reason) > 500:
                 raise ValueError("reason must be between 2 and 500 characters")
-            if not supplied_code or not hmac.compare_digest(supplied_code, configured_code):
+            authorization = judge_request_authorization(payload, race_id)
+            if not authorization or authorization.get("role") != "admin":
                 self.send_json(
-                    {"ok": False, "error": "Invalid administrator code"},
+                    {"ok": False, "error": "Administrator authorization is required"},
                     HTTPStatus.FORBIDDEN,
                 )
                 return

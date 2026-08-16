@@ -1094,6 +1094,29 @@ class TimingApiTests(unittest.TestCase):
             )
         self.assertEqual(error_context.exception.code, HTTPStatus.FORBIDDEN)
 
+        station_token = server.issue_judge_token(
+            "auto-test", "station_1", "Station 1 Judge"
+        )
+        self.assert_post_error(
+            "/api/result-adjustments",
+            {
+                "raceId": "auto-test",
+                "participantId": participant_id,
+                "adjustmentSeconds": 60,
+                "reason": "Station role must not adjust results",
+                "judgeToken": station_token,
+            },
+            HTTPStatus.FORBIDDEN,
+        )
+        admin_token = self.request_json(
+            "/api/judge-auth",
+            {
+                "raceId": "auto-test",
+                "username": "admin",
+                "password": "test-clear-code-1234",
+            },
+        )["judgeToken"]
+
         penalty = self.request_json(
             "/api/result-adjustments",
             {
@@ -1101,7 +1124,7 @@ class TimingApiTests(unittest.TestCase):
                 "participantId": participant_id,
                 "adjustmentSeconds": 60,
                 "reason": "Missed movement standard",
-                "adminCode": "test-clear-code-1234",
+                "judgeToken": admin_token,
             },
         )
         credit = self.request_json(
@@ -1157,6 +1180,14 @@ class TimingApiTests(unittest.TestCase):
         participant_id = self.request_json(
             "/api/participants?raceId=auto-test"
         )["participants"][0]["id"]
+        admin_token = self.request_json(
+            "/api/judge-auth",
+            {
+                "raceId": "auto-test",
+                "username": "admin",
+                "password": "test-clear-code-1234",
+            },
+        )["judgeToken"]
         total_result = self.request_json(
             "/api/manual-results",
             {
@@ -1165,7 +1196,7 @@ class TimingApiTests(unittest.TestCase):
                 "entryMode": "elapsed",
                 "elapsedSeconds": 600,
                 "reason": "Backup timer result",
-                "adminCode": "test-clear-code-1234",
+                "judgeToken": admin_token,
             },
         )
         self.assertEqual(total_result["manualResult"]["elapsedMs"], 600000)
@@ -1203,6 +1234,14 @@ class TimingApiTests(unittest.TestCase):
         participant_id = self.request_json(
             "/api/participants?raceId=auto-test"
         )["participants"][0]["id"]
+        admin_token = self.request_json(
+            "/api/judge-auth",
+            {
+                "raceId": "auto-test",
+                "username": "admin",
+                "password": "test-clear-code-1234",
+            },
+        )["judgeToken"]
         start_payload = self.timing_payload(0, "RUN_IN")
         start_payload["eventTime"] = (
             datetime.now(timezone.utc) - timedelta(minutes=1)
@@ -1219,7 +1258,7 @@ class TimingApiTests(unittest.TestCase):
                 "participantId": participant_id,
                 "action": "pause",
                 "reason": "Timing review",
-                "adminCode": "test-clear-code-1234",
+                "judgeToken": admin_token,
             },
         )
         paused = self.request_json(

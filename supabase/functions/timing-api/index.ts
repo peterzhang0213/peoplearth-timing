@@ -2029,7 +2029,6 @@ async function handlePost(route: string, request: Request): Promise<Response> {
     const participantId = Number(payload.participantId);
     const adjustmentSeconds = Number(payload.adjustmentSeconds);
     const reason = String(payload.reason || "").trim();
-    const suppliedCode = String(payload.adminCode || "");
     if (!Number.isInteger(participantId) || participantId <= 0) {
       throw new Error("participantId is required");
     }
@@ -2045,8 +2044,9 @@ async function handlePost(route: string, request: Request): Promise<Response> {
     if (reason.length < 2 || reason.length > 500) {
       throw new Error("reason must be between 2 and 500 characters");
     }
-    if (!suppliedCode || !(await secretsMatch(suppliedCode, configuredCode))) {
-      return jsonResponse({ ok: false, error: "Invalid administrator code" }, 403);
+    const authorization = await judgeAuthorization(payload, raceId);
+    if (!authorization || authorization.role !== "admin") {
+      return jsonResponse({ ok: false, error: "Administrator authorization is required" }, 403);
     }
     const profile = await ensureRaceProfile(raceId);
     if (profile.is_template) {
@@ -2465,7 +2465,6 @@ async function handlePost(route: string, request: Request): Promise<Response> {
     const participantId = Number(payload.participantId);
     const entryMode = String(payload.entryMode || "").trim();
     const reason = String(payload.reason || "").trim();
-    const suppliedCode = String(payload.adminCode || "");
     if (!Number.isInteger(participantId) || participantId <= 0) {
       throw new Error("participantId is required");
     }
@@ -2475,8 +2474,9 @@ async function handlePost(route: string, request: Request): Promise<Response> {
     if (reason.length < 2 || reason.length > 500) {
       throw new Error("reason must be between 2 and 500 characters");
     }
-    if (!suppliedCode || !(await secretsMatch(suppliedCode, configuredCode))) {
-      return jsonResponse({ ok: false, error: "Invalid administrator code" }, 403);
+    const authorization = await judgeAuthorization(payload, raceId);
+    if (!authorization || authorization.role !== "admin") {
+      return jsonResponse({ ok: false, error: "Administrator authorization is required" }, 403);
     }
     const profile = await ensureRaceProfile(raceId);
     if (profile.is_template) {
@@ -2548,7 +2548,6 @@ async function handlePost(route: string, request: Request): Promise<Response> {
     const participantId = Number(payload.participantId);
     const action = String(payload.action || "").trim().toLowerCase();
     const reason = String(payload.reason || "").trim();
-    const suppliedCode = String(payload.adminCode || "");
     if (!Number.isInteger(participantId) || participantId <= 0) {
       throw new Error("participantId is required");
     }
@@ -2558,8 +2557,9 @@ async function handlePost(route: string, request: Request): Promise<Response> {
     if (reason.length < 2 || reason.length > 500) {
       throw new Error("reason must be between 2 and 500 characters");
     }
-    if (!suppliedCode || !(await secretsMatch(suppliedCode, configuredCode))) {
-      return jsonResponse({ ok: false, error: "Invalid administrator code" }, 403);
+    const authorization = await judgeAuthorization(payload, raceId);
+    if (!authorization || authorization.role !== "admin") {
+      return jsonResponse({ ok: false, error: "Administrator authorization is required" }, 403);
     }
     const profile = await ensureRaceProfile(raceId);
     if (profile.is_template) {
