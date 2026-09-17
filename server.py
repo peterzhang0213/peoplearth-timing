@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import nanxi_rules
 import os
 import re
 import base64
@@ -47,6 +48,8 @@ PARTICIPANT_COLUMNS = (
     "bib_number",
     "entry_type",
     "member_names",
+    "category_code",
+    "female_count",
     "phone",
     "gender",
     "division",
@@ -135,22 +138,8 @@ RACE_ADMIN_ACTION_COLUMNS = (
     "reason",
     "created_at",
 )
-JUDGE_STATION_ACCOUNT_ROLES = (
-    "start",
-    "station_1",
-    "station_2",
-    "station_3",
-    "station_4",
-    "station_5",
-)
-JUDGE_STATION_ACCOUNT_ROLE_LABELS = {
-    "start": "开始",
-    "station_1": "站点 1",
-    "station_2": "站点 2",
-    "station_3": "站点 3",
-    "station_4": "站点 4",
-    "station_5": "站点 5 / 冲线",
-}
+JUDGE_STATION_ACCOUNT_ROLES = ("start", *(f"station_{i}" for i in range(1, 21)))
+JUDGE_STATION_ACCOUNT_ROLE_LABELS = {"start": "起点 / 发枪", **{f"station_{i}": f"站点 {i}" for i in range(1, 21)}}
 JUDGE_TOKEN_TTL_SECONDS = 12 * 60 * 60
 JUDGE_PASSWORD_ITERATIONS = 240_000
 RACE_MODES = {"two_reader_auto", "three_reader_auto", "station_checkpoints"}
@@ -162,6 +151,27 @@ HOKA_BOUNDARY_CHECKPOINT_RACE_IDS = {
     "hoka-race-final",
     "hoka-race-demo",
 }
+NANXI_RACE_IDS = {"nanxi-race-20260919", "nanxi-race-20260920"}
+NANXI_CATEGORY_LABELS = {
+    "A": "男子单人",
+    "B": "女子单人",
+    "C": "男子双人",
+    "D": "女子双人",
+    "E": "混合双人",
+    "F": "双人接力",
+    "G": "四人接力",
+}
+
+
+def is_nanxi_race_id(race_id: str) -> bool:
+    return str(race_id or "") in NANXI_RACE_IDS
+
+
+def nanxi_category_code(race_id: str, bib_number: str | None) -> str | None:
+    if not is_nanxi_race_id(race_id):
+        return None
+    prefix = str(bib_number or "").strip().upper().split("-", 1)[0]
+    return prefix if prefix in NANXI_CATEGORY_LABELS else None
 LAST_SUPABASE_SYNC = {
     "attemptedAt": None,
     "saved": None,
@@ -425,6 +435,8 @@ def ensure_participant_columns(db: sqlite3.Connection) -> None:
         row["name"] for row in db.execute("PRAGMA table_info(participants)").fetchall()
     }
     migrations = {
+        "category_code": "ALTER TABLE participants ADD COLUMN category_code TEXT",
+        "female_count": "ALTER TABLE participants ADD COLUMN female_count INTEGER",
         "phone": "ALTER TABLE participants ADD COLUMN phone TEXT",
         "gender": "ALTER TABLE participants ADD COLUMN gender TEXT",
         "entry_type": (
@@ -477,6 +489,10 @@ def ensure_participant_columns(db: sqlite3.Connection) -> None:
                 "UPDATE participants SET member_names = ? WHERE id = ?",
                 (json.dumps([row["athlete_name"]], ensure_ascii=False), row["id"]),
             )
+
+    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS participants_nanxi_bib_unique "
+               "ON participants(race_id, bib_number) WHERE race_id IN "
+               "('nanxi-race-20260919', 'nanxi-race-20260920')")
 
 
 def ensure_race_profile_columns(db: sqlite3.Connection) -> None:
@@ -579,6 +595,15 @@ def make_race_profile(
 
 
 def default_race_profile(race_id: str) -> dict:
+    if is_nanxi_race_id(race_id):
+        return make_race_profile(
+            race_id,
+            "南希运动季 · " + ("9 月 19 日" if race_id.endswith("20260919") else "9 月 20 日"),
+            "station_checkpoints",
+            9,
+            checkpoints=build_station_boundary_checkpoints(9),
+            entry_type="individual",
+        )
     if race_id in HOKA_BOUNDARY_CHECKPOINT_RACE_IDS:
         return make_race_profile(
             race_id,
@@ -632,6 +657,22 @@ def ensure_default_race_profiles(db: sqlite3.Connection) -> None:
             5,
             build_station_boundary_checkpoints(5),
             "team",
+        ),
+        (
+            "nanxi-race-20260919",
+            "南希运动季 · 9 月 19 日",
+            "station_checkpoints",
+            9,
+            build_station_boundary_checkpoints(9),
+            "individual",
+        ),
+        (
+            "nanxi-race-20260920",
+            "南希运动季 · 9 月 20 日",
+            "station_checkpoints",
+            9,
+            build_station_boundary_checkpoints(9),
+            "individual",
         ),
     ):
         profile = make_race_profile(
@@ -738,6 +779,9 @@ def race_profile_response(profile: dict) -> dict:
         "checkpoints": profile["checkpoints"],
         "checkpointLayout": checkpoint_layout,
         "entryType": profile.get("entry_type") or "individual",
+        "brand": "nanxi" if is_nanxi_race_id(profile["race_id"]) else None,
+        "categories": [{"code": code, "label": NANXI_CATEGORY_LABELS[code]}
+                       for code in nanxi_rules.RACES.get(profile["race_id"], "")],
         "status": profile.get("status") or "active",
         "finalizedAt": profile.get("finalized_at"),
         "isTemplate": bool(profile.get("is_template")),
@@ -1181,6 +1225,8 @@ def judge_role_checkpoints(profile: dict, role: str) -> list[str]:
     except (IndexError, ValueError):
         return []
     checkpoints = profile.get("checkpoints") or []
+    if not 1 <= station_number <= int(profile.get("station_count") or 0):
+        return []
     if profile.get("mode") != "station_checkpoints":
         return []
 
@@ -2037,7 +2083,7 @@ class TimingHandler(SimpleHTTPRequestHandler):
             if not race_id or len(race_id) > 80 or not all(c.isalnum() or c in "-_" for c in race_id):
                 raise ValueError("raceId must contain only letters, numbers, hyphens, or underscores")
             if role not in JUDGE_STATION_ACCOUNT_ROLES:
-                raise ValueError("role must be one of the six judge station roles")
+                raise ValueError("role must be start or station_1 through station_20")
             if len(username) < 2 or len(username) > 50 or not all(c.isalnum() or c in "._-" for c in username):
                 raise ValueError("username must contain 2-50 letters, numbers, dots, hyphens, or underscores")
             if display_name and len(display_name) > 80:
@@ -2412,6 +2458,7 @@ class TimingHandler(SimpleHTTPRequestHandler):
             supplied_code = str(payload.get("adminCode") or "")
             configured_code = leaderboard_clear_code()
             entry = normalize_participant_entry(payload)
+            nanxi_entry = nanxi_rules.registration(payload, entry)
             entry_type = entry["entry_type"]
             bib_number = normalize_bib_number(
                 payload.get("bibNumber"), race_id, entry_type
@@ -2491,9 +2538,9 @@ class TimingHandler(SimpleHTTPRequestHandler):
                             HTTPStatus.NOT_FOUND,
                         )
                         return
-                    if entry_type != "individual" and bib_number and db.execute(
+                    if (entry_type != "individual" or is_nanxi_race_id(race_id)) and bib_number and db.execute(
                         "SELECT 1 FROM participants WHERE race_id = ? AND bib_number = ? "
-                        "AND entry_type <> 'individual' AND id <> ? LIMIT 1",
+                        "AND id <> ? LIMIT 1",
                         (race_id, bib_number, participant_id),
                     ).fetchone():
                         raise ValueError("bibNumber is already assigned in this race")
@@ -2540,6 +2587,9 @@ class TimingHandler(SimpleHTTPRequestHandler):
                             participant_id,
                         ),
                     )
+                    db.execute("UPDATE participants SET category_code = ?, female_count = ? "
+                               "WHERE race_id = ? AND id = ?",
+                               (nanxi_entry["category_code"], nanxi_entry["female_count"], race_id, participant_id))
                     row = db.execute(
                         "SELECT * FROM participants WHERE race_id = ? AND id = ?",
                         (race_id, participant_id),
@@ -2751,6 +2801,16 @@ class TimingHandler(SimpleHTTPRequestHandler):
             if existing and existing.get("is_template"):
                 self.send_json(template_race_error(existing), HTTPStatus.CONFLICT)
                 return
+            if is_nanxi_race_id(race_id):
+                authorization = judge_request_authorization(payload, race_id)
+                if not authorization or authorization.get("role") != "admin":
+                    self.send_json({"ok": False, "error": "Administrator authorization is required"}, HTTPStatus.FORBIDDEN)
+                    return
+                payload = {**payload, "mode": "station_checkpoints", "checkpointLayout": "station_boundaries"}
+                if existing and int(payload.get("stationCount", existing["station_count"])) != existing["station_count"]:
+                    with connect_db() as db:
+                        if db.execute("SELECT 1 FROM timing_events WHERE race_id = ? AND status = 'accepted' LIMIT 1", (race_id,)).fetchone():
+                            raise ValueError("比赛已开始，不能修改站点数量")
             profile = save_race_profile(normalize_race_profile_payload(payload))
             cloud = sync_supabase_record("race_profiles", profile)
             self.send_json(
@@ -3627,6 +3687,14 @@ class TimingHandler(SimpleHTTPRequestHandler):
                 ).fetchone()
                 if not participant:
                     raise ValueError("Participant was not found in this race")
+                if is_nanxi_race_id(race_id):
+                    controls = db.execute("SELECT * FROM participant_timing_controls WHERE race_id = ? "
+                                          "AND participant_id = ? ORDER BY created_at, id", (race_id, participant_id)).fetchall()
+                    if timing_control_summary(controls, received_at)["state"] in {"pause", "dnf"}:
+                        raise ValueError("该参赛单位已暂停或退赛，不能确认站点")
+                    if db.execute("SELECT 1 FROM manual_results WHERE race_id = ? AND participant_id = ?",
+                                  (race_id, participant_id)).fetchone():
+                        raise ValueError("该参赛单位已有完赛成绩")
                 checkpoint_events = db.execute(
                     "SELECT station_id, event_time FROM timing_events "
                     "WHERE race_id = ? AND participant_id = ? AND status = 'accepted' "
@@ -4220,8 +4288,10 @@ class TimingHandler(SimpleHTTPRequestHandler):
             )
             participant_adjustments = adjustments_by_participant.get(participant["id"], [])
             adjustment_ms = sum(row["adjustment_ms"] for row in participant_adjustments)
+            nanxi_result = nanxi_rules.result_fields(participant_data, participant_adjustments)
+            deduction_ms = nanxi_result.get("deductionMs", 0)
             elapsed_ms = (
-                max(0, base_elapsed_ms + adjustment_ms)
+                max(0, base_elapsed_ms + adjustment_ms - deduction_ms)
                 if status == "finished" and base_elapsed_ms is not None
                 else base_elapsed_ms
             )
@@ -4240,6 +4310,7 @@ class TimingHandler(SimpleHTTPRequestHandler):
 
             results.append(
                 {
+                    **nanxi_result,
                     "participantId": participant["id"],
                     "athleteName": participant["athlete_name"],
                     "bibNumber": participant["bib_number"],
@@ -4323,6 +4394,7 @@ class TimingHandler(SimpleHTTPRequestHandler):
                 result["gapMs"] = None
             else:
                 result["gapMs"] = max(0, result["elapsedMs"] - leader_elapsed)
+        nanxi_rules.rank_categories(results)
         return results
 
     def build_checkpoint_map(
@@ -4540,7 +4612,7 @@ class TimingHandler(SimpleHTTPRequestHandler):
         elapsed = result["elapsedMs"] if result["elapsedMs"] is not None else 10**15
         return (
             status_order.get(result["status"], 3),
-            -result["progressIndex"],
+            0 if result.get("categoryCode") and result["status"] == "finished" else -result["progressIndex"],
             elapsed,
             result["bibNumber"] or "",
             result["athleteName"] or "",
@@ -4552,6 +4624,7 @@ class TimingHandler(SimpleHTTPRequestHandler):
             race_id = str(payload.get("raceId") or "hyrox-sim-001").strip()
             card_code = normalize_card_code(payload.get("cardCode"))
             entry = normalize_participant_entry(payload)
+            nanxi_entry = nanxi_rules.registration(payload, entry)
             athlete_name = entry["display_name"]
             entry_type = entry["entry_type"]
             member_names = entry["member_names"]
@@ -4597,9 +4670,9 @@ class TimingHandler(SimpleHTTPRequestHandler):
             now = utc_now()
             try:
                 with connect_db() as db:
-                    if entry_type != "individual" and bib_number and db.execute(
+                    if (entry_type != "individual" or is_nanxi_race_id(race_id)) and bib_number and db.execute(
                         "SELECT 1 FROM participants WHERE race_id = ? AND bib_number = ? "
-                        "AND entry_type <> 'individual' LIMIT 1",
+                        "LIMIT 1",
                         (race_id, bib_number),
                     ).fetchone():
                         raise ValueError("bibNumber is already assigned in this race")
@@ -4652,6 +4725,9 @@ class TimingHandler(SimpleHTTPRequestHandler):
                             now,
                         ),
                     )
+                    db.execute("UPDATE participants SET category_code = ?, female_count = ? "
+                               "WHERE race_id = ? AND card_code = ?",
+                               (nanxi_entry["category_code"], nanxi_entry["female_count"], race_id, card_code))
                     row = db.execute(
                         "SELECT * FROM participants WHERE race_id = ? AND card_code = ?",
                         (race_id, card_code),
@@ -4820,7 +4896,13 @@ class TimingHandler(SimpleHTTPRequestHandler):
                             "currentCheckpoint": latest_checkpoint,
                         }
                     else:
-                        status = "accepted"
+                        previous_time = db.execute(
+                            "SELECT event_time FROM timing_events WHERE race_id = ? AND participant_id = ? "
+                            "AND station_id = ? AND status = 'accepted' ORDER BY id DESC LIMIT 1",
+                            (race_id, participant["id"], latest_checkpoint),
+                        ).fetchone()
+                        status = "invalid_progress" if (is_nanxi_race_id(race_id) and previous_time
+                            and parse_iso(normalized["event_time"]) < parse_iso(previous_time["event_time"])) else "accepted"
             elif normalized["timing_mode"] == "auto":
                 expected_sequence = profile["checkpoints"]
                 finish_role = (

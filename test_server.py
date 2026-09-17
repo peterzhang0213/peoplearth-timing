@@ -2091,6 +2091,8 @@ class DefaultRaceProfileTests(unittest.TestCase):
                 "hoka-race-hz",
                 "hoka-race-final",
                 "nfc-test-001",
+                "nanxi-race-20260919",
+                "nanxi-race-20260920",
             },
         )
         self.assertEqual(test_profile["name"], "Peoplearth Simulation · 001")

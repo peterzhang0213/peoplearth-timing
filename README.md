@@ -64,6 +64,18 @@ http://localhost:8787/web-nfc-timing-test.html
 http://localhost:8787/leaderboard.html
 ```
 
+The Nanxi mobile ranking is `http://localhost:8787/nanxi.html`, the venue screen is
+`http://localhost:8787/nanxi-leaderboard-preview.html`, and the finish photo card is
+`http://localhost:8787/finish-result.html`. Nanxi uses fixed bib numbers: September
+19 uses `A-001` through `E-001` (men/women singles, men/women/mixed doubles), while
+September 20 uses `F-001` and `G-001` (two-person and four-person relay). The public
+pages default to live results; append `?demo=1` only when a mock screen is needed.
+Bind real events explicitly with `?demo=0&race19=EVENT_ID_19&race20=EVENT_ID_20`;
+these are backend event IDs, while the lookup input matches the entry's `bibNumber`.
+Real queries use `timing-api.js` over HTTP(S), never fall back to mock results, and
+only display a photo card for finished entries. A `file://` page can show demo
+cards offline and provides a link to the local service for real queries.
+
 The admin page owns race setup and NFC binding. The judge page owns race starts and
 audited timing decisions. The first phone checkpoint (`START`) only confirms that a
 participant is ready; the judge freely selects ready entries and starts them with the

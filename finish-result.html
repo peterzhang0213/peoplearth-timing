@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>南希运动季 · 完赛成绩卡</title>
+  <style>
+    :root { --black:#0a0a08; --yellow:#fff04f; --muted:#c9be2e; --white:#f5f5f5; --panel:#12120f; --line:#514b13; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:var(--black); color:var(--yellow); font-family:Arial,"PingFang SC","Microsoft YaHei",sans-serif; }
+    main { width:min(1080px,100%); margin:auto; padding:28px 24px 48px; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:30px; color:var(--muted); font-size:13px; font-weight:900; letter-spacing:.12em; }
+    #fullscreenButton { min-height:38px; padding:0 14px; border-color:var(--yellow); background:transparent; color:var(--white); font-size:12px; letter-spacing:.04em; }
+    .brand { display:block; width:min(520px,90%); height:auto; margin:0 auto 28px; filter:brightness(0) saturate(100%) invert(85%) sepia(94%) saturate(1260%) hue-rotate(4deg) brightness(104%) contrast(103%); }
+    h1 { margin:0; color:var(--yellow); font-size:clamp(34px,6vw,64px); letter-spacing:-.05em; }
+    .intro { display:flex; align-items:end; justify-content:space-between; gap:20px; border-bottom:2px solid var(--yellow); padding-bottom:20px; }
+    .intro p { max-width:360px; margin:0; color:var(--muted); font-size:14px; line-height:1.6; }
+    form { display:grid; grid-template-columns:minmax(0,1fr) 170px 200px auto; gap:10px; margin:22px 0 16px; }
+    input, select, button { min-height:50px; border:2px solid var(--yellow); border-radius:2px; background:transparent; color:var(--yellow); padding:0 14px; font:inherit; font-weight:900; }
+    input { min-width:0; font-family:"SFMono-Regular",Consolas,monospace; text-transform:uppercase; }
+    select option { color:var(--black); }
+    button { background:var(--yellow); color:var(--black); cursor:pointer; }
+    .hint { color:var(--muted); font-size:13px; }
+    .hint a { color:var(--yellow); }
+    .message { margin:18px 0; color:var(--muted); font-weight:800; }
+    .message.error { color:#ff9e8f; }
+    .card { display:none; margin-top:28px; background:var(--panel); border:2px solid var(--yellow); }
+    .card.visible { display:block; }
+    .card-top { display:flex; justify-content:space-between; gap:18px; align-items:start; padding:24px; border-bottom:1px solid var(--line); }
+    .card-label { color:var(--muted); font-size:12px; font-weight:900; letter-spacing:.12em; text-transform:uppercase; }
+    .card h2 { margin:8px 0 4px; color:var(--yellow); font-size:clamp(30px,5vw,52px); line-height:1; }
+    .members { margin:0; color:var(--white); font-size:17px; font-weight:700; line-height:1.5; }
+    .bib { color:var(--yellow); font-family:"SFMono-Regular",Consolas,monospace; font-size:20px; font-weight:900; }
+    .metrics { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--line); }
+    .metric { min-height:112px; padding:18px 20px; background:var(--panel); }
+    .metric strong { display:block; margin-top:8px; color:var(--yellow); font:900 clamp(26px,4vw,44px)/1.2 "SFMono-Regular",Consolas,monospace; overflow-wrap:anywhere; }
+    #finishTime { font-size:clamp(20px,2.5vw,28px); }
+    .metric.light strong { color:var(--white); }
+    .splits { padding:20px 24px 24px; }
+    .splits h3 { margin:0 0 14px; font-size:15px; letter-spacing:.1em; }
+    .split-grid { display:grid; grid-template-columns:repeat(9,1fr); gap:6px; }
+    .split { min-height:66px; padding:9px 8px; border-left:2px solid var(--line); }
+    .split b { display:block; color:var(--muted); font-size:11px; }
+    .split span { display:block; margin-top:7px; color:var(--white); font:800 16px "SFMono-Regular",Consolas,monospace; }
+    .stamp { margin-top:18px; color:var(--muted); font-size:13px; font-weight:800; }
+    .presentation { display:none; }
+    body.presentation-mode { overflow:hidden; }
+    body.presentation-mode > main { display:none; }
+    body.presentation-mode .presentation { position:fixed; inset:0; z-index:20; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:clamp(24px,5vh,64px); padding:6vh 5vw; background:var(--black); text-align:center; }
+    .presentation-logo { width:min(720px,78vw); height:auto; filter:brightness(0) saturate(100%) invert(85%) sepia(94%) saturate(1260%) hue-rotate(4deg) brightness(104%) contrast(103%); }
+    .presentation-label { display:none; }
+    .presentation-name { max-width:90vw; color:var(--white); font-size:clamp(34px,7vw,96px); font-weight:950; line-height:1.1; overflow-wrap:anywhere; }
+    .presentation-members { max-width:90vw; margin-top:12px; color:var(--muted); font-size:clamp(16px,2.5vw,30px); font-weight:700; }
+    .presentation-time { color:var(--yellow); font:950 clamp(34px,7vw,96px)/1.1 "SFMono-Regular",Consolas,monospace; letter-spacing:-.03em; }
+    .presentation-exit { display:none; }
+    @media (max-width:900px) { form { grid-template-columns:1fr 1fr; } #bibInput { grid-column:1 / -1; } form button { grid-column:1 / -1; } }
+    @media (max-width:700px) { main { padding:20px 14px 36px; } header { margin-bottom:18px; } .intro { display:block; } .intro p { margin-top:12px; } form { grid-template-columns:1fr; } .card-top { display:block; } .bib { margin-top:18px; } .metrics { grid-template-columns:1fr; } .metric { min-height:86px; } .split-grid { grid-template-columns:repeat(3,1fr); gap:5px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header><span>FINISH RESULT CARD</span><div><span id="clock"></span> <button id="fullscreenButton" type="button">全屏显示</button></div></header>
+    <img class="brand" src="./assets/nanxi-main-visual-cropped.svg" alt="南希运动季主视觉">
+    <section class="intro"><div><h1>完赛成绩</h1></div><p>输入选手编号，生成个人或队伍的完赛卡片，用于现场拍照留存。</p></section>
+    <form id="lookupForm">
+      <input id="bibInput" autocomplete="off" placeholder="输入选手编号，例如 A-001 / C-001" aria-label="选手编号">
+      <select id="dayInput" aria-label="比赛日期"><option value="19">9 月 19 日</option><option value="20">9 月 20 日</option></select>
+      <select id="sourceInput" aria-label="成绩来源"><option value="demo">演示成绩（Mock）</option><option value="live">真实成绩</option></select>
+      <button type="submit">查询成绩</button>
+    </form>
+    <div id="lookupHint" class="hint"></div>
+    <p id="fileNotice" class="hint" hidden>真实成绩查询请通过 <a id="serviceLink">本地计时服务打开</a>。</p>
+    <div id="message" class="message" role="status"></div>
+    <article id="resultCard" class="card" aria-live="polite">
+      <div class="card-top"><div><div id="eventLabel" class="card-label"></div><h2 id="entryName"></h2><p id="memberNames" class="members"></p></div><div id="bibLabel" class="bib"></div></div>
+      <div class="metrics"><div class="metric"><div class="card-label">FINISH TIME</div><strong id="finishTime">--</strong></div><div class="metric"><div class="card-label">TOTAL TIME</div><strong id="totalTime">--</strong></div><div class="metric light"><div class="card-label">PENALTY / ADJUSTMENT</div><strong id="adjustment">--</strong></div></div>
+      <div class="splits"><h3>STATION SPLITS</h3><div id="splitGrid" class="split-grid"></div><div id="stamp" class="stamp"></div></div>
+    </article>
+  </main>
+  <section id="presentation" class="presentation" aria-label="全屏成绩"><button id="presentationExit" class="presentation-exit" type="button">退出全屏</button><img class="presentation-logo" src="./assets/nanxi-main-visual-cropped.svg" alt="南希运动季主视觉"><div><div id="presentationLabel" class="presentation-label"></div><div id="presentationName" class="presentation-name"></div><div id="presentationMembers" class="presentation-members"></div></div><div id="presentationTime" class="presentation-time">--:--:--</div></section>
+  <script src="./timing-api.js"></script>
+  <script src="./nanxi.js"></script>
+  <script>
+    const $ = (selector) => document.querySelector(selector);
+    const urlParams = new URLSearchParams(location.search);
+    const raceIds = {19: (urlParams.get("race19") || Nanxi.races[19]).trim(), 20: (urlParams.get("race20") || Nanxi.races[20]).trim()};
+    const initialDemo = urlParams.has("demo") ? urlParams.get("demo") === "1" : !raceIds[19] && !raceIds[20];
+    const groupLabels = {A:"男子单人", B:"女子单人", C:"男子双人", D:"女子双人", E:"混合双人"};
+    let requestVersion = 0;
+    let requestController = null;
+    let lastRow = null;
+    let lastDay = "19";
+    function normalizeBib(value) { return String(value || "").normalize("NFKC").trim().toUpperCase().replace(/[‐‑–—−]/g, "-").replace(/\s+/g, ""); }
+    function formatDuration(ms) { if (ms == null || !Number.isFinite(Number(ms))) return "--:--:--"; const total=Math.max(0,Math.round(Number(ms)/1000)); return [Math.floor(total/3600),Math.floor(total/60)%60,total%60].map(v=>String(v).padStart(2,"0")).join(":"); }
+    function formatDate(value) { if (!value) return "--"; const date=new Date(value); return Number.isNaN(date.getTime()) ? "--" : date.toLocaleString("zh-CN",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}); }
+    function showMessage(text,error=false) { $("#message").textContent=text; $("#message").classList.toggle("error",error); }
+    function render(row, day, isDemo) {
+      lastRow = row;
+      lastDay = day;
+      const members = Array.isArray(row.memberNames) && row.memberNames.length ? row.memberNames : [row.athleteName];
+      const group = row.categoryLabel || (day === "20" ? (members.length === 4 ? "四人接力" : "双人接力") : groupLabels[String(row.bibNumber||"").charAt(0)] || "赛事成绩");
+      $("#eventLabel").textContent = `${isDemo ? "演示成绩 · " : ""}9 月 ${day} 日 · ${group}`;
+      $("#entryName").textContent = row.athleteName || "未命名队伍";
+      $("#memberNames").textContent = row.entryType === "individual" ? "个人参赛" : members.join(" / ");
+      $("#bibLabel").textContent = row.bibNumber || "--";
+      $("#finishTime").textContent = formatDate(row.finishTime);
+      $("#totalTime").textContent = formatDuration(row.elapsedMs);
+      const adjustment = Number(row.adjustmentMs || 0) - Number(row.deductionMs || 0);
+      $("#adjustment").textContent = adjustment === 0 ? "00:00" : `${adjustment > 0 ? "+" : "−"}${formatDuration(Math.abs(adjustment)).slice(3)}`;
+      const splits = row.stationSplits || {};
+      $("#splitGrid").innerHTML = Array.from({length:Object.keys(row.stationSplits || {}).filter(key=>/^station[0-9]+Ms$/.test(key)).length || 9},(_,i)=>`<div class="split"><b>S${i+1}</b><span>${formatDuration(splits[`station${i+1}Ms`]).slice(3)}</span></div>`).join("");
+      $("#stamp").textContent = `${row.categoryRank ? `组别排名：第 ${row.categoryRank} 名 · ` : ""}状态：${row.status === "finished" ? "已完赛" : row.status === "racing" ? "比赛中" : "暂无完赛时间"} · 生成于 ${formatDate(new Date().toISOString())}`;
+      $("#presentationLabel").textContent = `${isDemo ? "演示成绩 · " : ""}9 月 ${day} 日 · 总成绩`;
+      $("#presentationName").textContent = row.athleteName || "未命名队伍";
+      $("#presentationMembers").textContent = row.entryType === "individual" ? "" : members.join(" / ");
+      $("#presentationTime").textContent = formatDuration(row.elapsedMs);
+      $("#resultCard").classList.add("visible");
+    }
+    async function toggleFullscreen() {
+      if (!lastRow || !$("#resultCard").classList.contains("visible")) { showMessage("请先查询出一条完赛成绩，再进入全屏。", true); return; }
+      if (document.fullscreenElement || document.body.classList.contains("presentation-mode")) {
+        if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen();
+        document.body.classList.remove("presentation-mode");
+        $("#fullscreenButton").textContent = "全屏显示";
+        return;
+      }
+      document.body.classList.add("presentation-mode");
+      $("#fullscreenButton").textContent = "退出全屏";
+      try { if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen(); } catch { /* CSS presentation remains available. */ }
+    }
+    function demoRow(bib, day) {
+      return Nanxi.mock(day).leaderboard.find(row=>row.bibNumber === bib) || null;
+    }
+    function resetLookup() {
+      requestVersion++;
+      requestController?.abort();
+      $("#resultCard").classList.remove("visible");
+      showMessage("");
+    }
+    function updateSource() {
+      resetLookup();
+      const isDemo = $("#sourceInput").value === "demo";
+      const day = $("#dayInput").value;
+      $("#lookupHint").textContent = isDemo
+        ? day === "19" ? "演示编号：A-001、B-001、C-001、D-001、E-001，各组 001–020。仅用于版式预览。" : "演示编号：F-001（双人接力）、G-001（四人接力）。"
+        : "查询所选比赛日期的真实成绩。";
+      $("#fileNotice").hidden = isDemo || location.protocol !== "file:";
+      if (!isDemo && !raceIds[day]) showMessage("该比赛日期尚未绑定真实赛事。现在可选择“演示成绩”体验查询。", true);
+    }
+    async function lookup(event) {
+      event.preventDefault();
+      resetLookup();
+      const version = requestVersion;
+      const bib = normalizeBib($("#bibInput").value);
+      const day = $("#dayInput").value;
+      if (!bib) { showMessage("请输入选手编号。",true); return; }
+      $("#bibInput").value = bib;
+      if ($("#sourceInput").value === "demo") {
+        const row = demoRow(bib, day);
+        if (!row) { showMessage(`没有找到演示编号 ${bib}，请使用上方列出的编号，并核对比赛日期。`,true); return; }
+        render(row, day, true); showMessage("演示成绩已显示，仅用于确认拍照版式。"); return;
+      }
+      if (!raceIds[day]) { showMessage("该比赛日期尚未绑定真实赛事，请先使用演示成绩。",true); return; }
+      if (location.protocol === "file:") { showMessage("本地文件无法直接查询计时接口，请点击上方“本地计时服务打开”。",true); return; }
+      if (!/^[A-Za-z0-9_-]{1,80}$/.test(raceIds[day])) { showMessage("绑定的赛事标识无效，请检查赛事配置。",true); return; }
+      showMessage("正在查询…");
+      const controller = new AbortController();
+      requestController = controller;
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      try {
+        const response = await window.timingApiFetch(`/api/leaderboard?raceId=${encodeURIComponent(raceIds[day])}`, {cache:"no-store", signal:controller.signal});
+        if (version !== requestVersion) return;
+        if (!response.ok) { showMessage(`成绩服务返回错误（HTTP ${response.status}），请稍后重试。`,true); return; }
+        const payload = await response.json();
+        if (version !== requestVersion) return;
+        if (!payload.ok || !Array.isArray(payload.leaderboard)) { showMessage("成绩服务返回的数据异常，请稍后重试。",true); return; }
+        if (!payload.leaderboard.length) { showMessage("当前绑定赛事还没有参赛成绩，暂时无法查询。",true); return; }
+        const row = payload.leaderboard.find(item => normalizeBib(item.bibNumber) === bib);
+        if (!row) { showMessage(`没有找到 ${bib}，请检查比赛日期或编号。`,true); return; }
+        if (row.status !== "finished") { showMessage(`${bib} 尚无完赛成绩，完成比赛后再查询。`,true); return; }
+        render(row, day, false); showMessage("查询成功，可直接用于现场拍照。");
+      } catch (error) {
+        if (version === requestVersion) showMessage(error.name === "AbortError" ? "查询超时，请重试。" : "无法连接成绩服务，请检查网络及计时服务是否启动。",true);
+      } finally { clearTimeout(timeout); }
+    }
+    $("#sourceInput").value = initialDemo ? "demo" : "live";
+    const serviceParams = new URLSearchParams(urlParams);
+    serviceParams.set("demo", "0");
+    $("#serviceLink").href = `http://localhost:8787/finish-result.html?${serviceParams}`;
+    $("#lookupForm").addEventListener("submit", lookup);
+    $("#fullscreenButton").addEventListener("click", toggleFullscreen);
+    $("#presentationExit").addEventListener("click", toggleFullscreen);
+    document.addEventListener("fullscreenchange", () => {
+      const active = Boolean(document.fullscreenElement);
+      if (!active) document.body.classList.remove("presentation-mode");
+      $("#fullscreenButton").textContent = active || document.body.classList.contains("presentation-mode") ? "退出全屏" : "全屏显示";
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && document.body.classList.contains("presentation-mode")) {
+        toggleFullscreen();
+      }
+    });
+    $("#sourceInput").addEventListener("change", updateSource);
+    $("#dayInput").addEventListener("change", updateSource);
+    $("#bibInput").addEventListener("input", resetLookup);
+    function updateClock() { $("#clock").textContent = new Date().toLocaleTimeString("zh-CN",{hour12:false}); }
+    const requestedBib = normalizeBib(urlParams.get('bib'));
+    $("#dayInput").value = urlParams.get('day') === '20' || ['F','G'].includes(requestedBib[0]) ? '20' : '19';
+    updateSource(); updateClock(); setInterval(updateClock,1000);
+    if (requestedBib) { $("#bibInput").value = requestedBib; lookup({preventDefault(){}}); }
+  </script>
+</body>
+</html>

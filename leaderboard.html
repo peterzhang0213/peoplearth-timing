@@ -4,6 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SRC Hyrox Simulation Live Timing</title>
+  <script>
+    { const query = new URLSearchParams(location.search);
+      if (["nanxi-race-20260919", "nanxi-race-20260920"].includes(query.get("raceId")) || query.get("brand") === "nanxi")
+        location.replace(`./nanxi.html?${query}`); }
+  </script>
   <link rel="icon" type="image/png" sizes="192x192" href="./assets/src-logo.png">
   <link rel="apple-touch-icon" href="./assets/src-logo.png">
   <style>
@@ -1952,6 +1957,7 @@
   </header>
 
   <main>
+    <div style="margin-bottom:14px;display:flex;gap:12px;align-items:center"><label for="brandChoice">赛事分类</label><select id="brandChoice" style="min-height:44px;padding:8px 14px;background:#fff;color:#08253d;border:1px solid #8da5b8;border-radius:6px"><option value="hoka">HOKA</option><option value="nanxi">南希运动季 · Nanxi</option></select></div>
     <div class="toolbar">
       <label>
         <span data-i18n="raceId">选择比赛</span>
@@ -4432,6 +4438,7 @@
       if (document.visibilityState === "visible") refreshLoop(true);
     });
 
+    document.querySelector('#brandChoice').addEventListener('change',event=>{ if(event.target.value==='nanxi') location.href='./nanxi.html'; });
     initializeLeaderboard();
     scheduleLeaderboardRefresh();
     setInterval(updateLiveDurations, 250);

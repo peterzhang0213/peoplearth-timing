@@ -4,6 +4,7 @@ WORKDIR /app
 
 COPY supabase/functions/timing-api/deno.json ./deno.json
 COPY supabase/functions/timing-api/index.ts ./index.ts
+COPY supabase/functions/timing-api/nanxi.ts ./nanxi.ts
 
 RUN deno cache --config=deno.json index.ts
 

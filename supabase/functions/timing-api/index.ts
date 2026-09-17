@@ -1,3 +1,4 @@
+import { NANXI_RACES, NANXI_CATEGORIES, nanxiRegistration, rankNanxiCategories } from "./nanxi.ts";
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
@@ -8,14 +9,14 @@ const CORS_HEADERS = {
 type JsonObject = Record<string, unknown>;
 type DatabaseRow = Record<string, any>;
 
-const JUDGE_ROLES = ["start", "station_1", "station_2", "station_3", "station_4", "station_5"];
+const JUDGE_ROLES = ["start", ...Array.from({length: 20}, (_, i) => `station_${i + 1}`)];
 const JUDGE_ROLE_LABELS: Record<string, string> = {
   start: "开始",
   station_1: "站点 1",
   station_2: "站点 2",
   station_3: "站点 3",
   station_4: "站点 4",
-  station_5: "站点 5 / 冲线",
+  ...Object.fromEntries(Array.from({length: 20}, (_, i) => [`station_${i + 1}`, `站点 ${i + 1}`])),
 };
 const JUDGE_TOKEN_TTL_SECONDS = 12 * 60 * 60;
 const JUDGE_PASSWORD_ITERATIONS = 240_000;
@@ -267,7 +268,7 @@ function judgeRoleCheckpoints(profile: DatabaseRow, role: string): string[] {
   if (role === "admin") return [];
   if (role === "start") return ["START"];
   const stationNumber = Number(String(role).replace("station_", ""));
-  if (!Number.isInteger(stationNumber) || profile.mode !== "station_checkpoints") return [];
+  if (!Number.isInteger(stationNumber) || stationNumber < 1 || stationNumber > Number(profile.station_count) || profile.mode !== "station_checkpoints") return [];
   const checkpoints = Array.isArray(profile.checkpoints)
     ? profile.checkpoints.map((checkpoint: unknown) => String(checkpoint))
     : [];
@@ -468,15 +469,15 @@ function checkpointMetadata(checkpoint: string): JsonObject {
 
 function defaultRaceProfile(raceId: string): DatabaseRow {
   const now = new Date().toISOString();
-  if (HOKA_BOUNDARY_RACE_IDS.has(raceId)) {
+  if (HOKA_BOUNDARY_RACE_IDS.has(raceId) || NANXI_RACES[raceId]) {
     return {
       race_id: raceId,
-      name: raceId,
+      name: NANXI_RACES[raceId] ? `南希运动季 · 9 月 ${raceId.slice(-2)} 日` : raceId,
       mode: "station_checkpoints",
-      station_count: 5,
+      station_count: NANXI_RACES[raceId] ? 9 : 5,
       start_group_size: 1,
-      checkpoints: buildStationBoundaryCheckpoints(5),
-      entry_type: "team",
+      checkpoints: buildStationBoundaryCheckpoints(NANXI_RACES[raceId] ? 9 : 5),
+      entry_type: NANXI_RACES[raceId] ? "individual" : "team",
       status: "active",
       finalized_at: null,
       is_template: raceId === "hoka-race",
@@ -510,6 +511,8 @@ function raceResponse(profile: DatabaseRow): JsonObject {
     checkpoints: profile.checkpoints,
     checkpointLayout: checkpointLayout(profile),
     entryType: profile.entry_type || "individual",
+    brand: NANXI_RACES[profile.race_id] ? "nanxi" : null,
+    categories: Array.from(NANXI_RACES[profile.race_id] || "").map(code => ({code, label: NANXI_CATEGORIES[code][0]})),
     status: profile.status || "active",
     finalizedAt: profile.finalized_at || null,
     isTemplate: Boolean(profile.is_template),
@@ -1011,11 +1014,16 @@ function buildLeaderboard(
       ? controlledMillisecondsBetween(rawStartTime, rawFinishTime || generatedAt, controlSummary)
       : null;
     const baseElapsedMs = latestManualResult ? Number(latestManualResult.elapsed_ms) : rawElapsedMs;
+    const categoryCode = NANXI_RACES[profile.race_id] ? participant.category_code || String(participant.bib_number || "")[0] : null;
+    const deductionMs = categoryCode && "FG".includes(categoryCode) ? Math.min(Number(participant.female_count || 0), 2) * 300000 : 0;
     const elapsedMs = status === "finished" && baseElapsedMs !== null
-      ? Math.max(0, baseElapsedMs + adjustmentMs)
+      ? Math.max(0, baseElapsedMs + adjustmentMs - deductionMs)
       : baseElapsedMs;
 
     return {
+      ...(categoryCode ? { categoryCode, categoryLabel: NANXI_CATEGORIES[categoryCode]?.[0],
+        femaleCount: participant.female_count, deductionMs,
+        penaltyMs: participantAdjustments.reduce((sum, row) => sum + Math.max(0, Number(row.adjustment_ms)), 0) } : {}),
       participantId: participant.id,
       athleteName: participant.athlete_name,
       bibNumber: participant.bib_number,
@@ -1068,7 +1076,7 @@ function buildLeaderboard(
   results.sort((left, right) => {
     const statusDifference = (statusOrder[left.status] ?? 3) - (statusOrder[right.status] ?? 3);
     if (statusDifference) return statusDifference;
-    if (left.progressIndex !== right.progressIndex) return right.progressIndex - left.progressIndex;
+    if (!(NANXI_RACES[profile.race_id] && left.status === "finished" && right.status === "finished") && left.progressIndex !== right.progressIndex) return right.progressIndex - left.progressIndex;
     const leftElapsed = left.elapsedMs ?? Number.MAX_SAFE_INTEGER;
     const rightElapsed = right.elapsedMs ?? Number.MAX_SAFE_INTEGER;
     if (leftElapsed !== rightElapsed) return leftElapsed - rightElapsed;
@@ -1078,13 +1086,15 @@ function buildLeaderboard(
   const leaderElapsed = results.find((result) => (
     result.status === "finished" && result.elapsedMs !== null
   ))?.elapsedMs ?? null;
-  return results.map((result, index) => ({
+  const ranked = results.map((result, index) => ({
     ...result,
     rank: index + 1,
     gapMs: result.status !== "finished" || result.elapsedMs === null || leaderElapsed === null
       ? null
       : Math.max(0, result.elapsedMs - leaderElapsed),
   }));
+  if (NANXI_RACES[profile.race_id]) rankNanxiCategories(ranked);
+  return ranked;
 }
 
 async function readJsonBody(request: Request): Promise<JsonObject> {
@@ -1336,7 +1346,7 @@ async function handlePost(route: string, request: Request): Promise<Response> {
     const password = String(payload.password || "");
     const displayName = String(payload.displayName || "").trim();
     const active = payload.active !== false;
-    if (!JUDGE_ROLES.includes(role)) throw new Error("role must be one of the six judge station roles");
+    if (!JUDGE_ROLES.includes(role)) throw new Error("role must be start or station_1 through station_20");
     if (!/^[a-z0-9._-]{2,50}$/.test(username)) throw new Error("username must contain 2-50 letters, numbers, dots, hyphens, or underscores");
     if (displayName.length > 80) throw new Error("displayName must be 80 characters or fewer");
     const existingRows = await databaseRequest("judge_station_accounts", {
@@ -1880,6 +1890,7 @@ async function handlePost(route: string, request: Request): Promise<Response> {
     const confirmation = String(payload.confirmation || "").trim();
     const suppliedCode = String(payload.adminCode || "");
     const entry = normalizeParticipantEntry(payload);
+    const nanxiEntry = nanxiRegistration(payload, entry);
     const bibNumber = normalizeBibNumber(payload.bibNumber, raceId, entry.entryType);
     const startBatchProvided = payload.startBatch !== undefined;
     const startBatch = optionalStartBatch(payload.startBatch);
@@ -1933,7 +1944,7 @@ async function handlePost(route: string, request: Request): Promise<Response> {
         limit: "1",
       },
       }),
-      entry.entryType !== "individual" && bibNumber ? databaseRequest("participants", {
+      (entry.entryType !== "individual" || NANXI_RACES[raceId]) && bibNumber ? databaseRequest("participants", {
         query: {
           select: "id",
           race_id: `eq.${raceId}`,
@@ -1977,6 +1988,7 @@ async function handlePost(route: string, request: Request): Promise<Response> {
           bib_number: bibNumber,
           entry_type: entry.entryType,
           member_names: entry.memberNames,
+          ...nanxiEntry,
           phone: entry.entryType === "individual"
             ? String(payload.phone || "").trim() || null
             : null,
@@ -2201,6 +2213,19 @@ async function handlePost(route: string, request: Request): Promise<Response> {
     const eventTimeMs = Date.parse(eventTimeInput);
     if (!Number.isFinite(eventTimeMs)) throw new Error("eventTime must be ISO-8601");
     const eventTime = new Date(eventTimeMs).toISOString();
+    if (NANXI_RACES[raceId]) {
+      const result = await databaseRequest("rpc/process_nanxi_checkpoint", {
+        method: "POST", body: {p_payload: {
+          raceId, participantId, stationId, eventTime, deviceId,
+          eventId: `judge-manual-checkpoint:${crypto.randomUUID()}`,
+          timingMode: "manual", source: "judge-manual-checkpoint", reason: auditReason,
+          judgeRole: authorization.role, judgeName: authorization.displayName,
+        }},
+      });
+      const accepted = result.status === "accepted";
+      return jsonResponse({...result, ok: accepted, stationIds: [stationId],
+        ...(accepted ? {} : {error: result.error || "本站已确认或进度已变化，请刷新"})}, accepted ? 201 : 409);
+    }
     const metadata = checkpointMetadata(stationId);
     const stationIds = manualCheckpointStationIds(profile, stationId);
     const [participants, checkpointEvents] = await Promise.all([
@@ -2225,7 +2250,7 @@ async function handlePost(route: string, request: Request): Promise<Response> {
     if (!participants[0]) throw new Error("Participant was not found in this race");
     const { latestCheckpoint, expectedCheckpoint } = nextRaceCheckpoint(
       profile,
-      checkpointEvents.map((event) => String(event.station_id || "")),
+      checkpointEvents.map((event: DatabaseRow) => String(event.station_id || "")),
     );
     if (stationId !== expectedCheckpoint) {
       return jsonResponse({
@@ -2237,7 +2262,7 @@ async function handlePost(route: string, request: Request): Promise<Response> {
         expectedCheckpoint,
       }, 409);
     }
-    const latestEvent = checkpointEvents.find((event) => event.station_id === latestCheckpoint);
+    const latestEvent = checkpointEvents.find((event: DatabaseRow) => event.station_id === latestCheckpoint);
     if (latestEvent && eventTimeMs < Date.parse(String(latestEvent.event_time || ""))) {
       throw new Error("eventTime must not be earlier than the previous checkpoint time");
     }
@@ -2753,6 +2778,16 @@ async function handlePost(route: string, request: Request): Promise<Response> {
 
   if (route === "/race-config") {
     const raceId = requiredRaceId(payload.raceId);
+    if (NANXI_RACES[raceId]) {
+      const auth = await judgeAuthorization(payload, raceId);
+      if (!auth || auth.role !== 'admin') return jsonResponse({ok: false, error: 'Administrator authorization is required'},403);
+      payload.mode = 'station_checkpoints'; payload.checkpointLayout = 'station_boundaries';
+      const previous = await findRaceProfile(raceId);
+      if (previous && Number(payload.stationCount) !== Number(previous.station_count)) {
+        const events = await databaseRequest('timing_events',{query:{select:'id',race_id:`eq.${raceId}`,status:'eq.accepted',limit:'1'}});
+        if (events.length) throw new Error('比赛已开始，不能修改站点数量');
+      }
+    }
     const modeAliases: Record<string, string> = {
       auto: "two_reader_auto",
       manual: "station_checkpoints",
@@ -2835,6 +2870,7 @@ async function handlePost(route: string, request: Request): Promise<Response> {
     const raceId = requiredRaceId(payload.raceId || "hyrox-sim-001");
     const cardCode = String(payload.cardCode || "").trim().toUpperCase();
     const entry = normalizeParticipantEntry(payload);
+    const nanxiEntry = nanxiRegistration(payload, entry);
     const bibNumber = normalizeBibNumber(payload.bibNumber, raceId, entry.entryType);
     const startBatch = optionalStartBatch(payload.startBatch);
     const athleteName = entry.displayName;
@@ -2878,7 +2914,7 @@ async function handlePost(route: string, request: Request): Promise<Response> {
           : { start_order: `eq.${requestedStartOrder}`, limit: "1" }),
       },
       }),
-      entry.entryType !== "individual" && bibNumber ? databaseRequest("participants", {
+      (entry.entryType !== "individual" || NANXI_RACES[raceId]) && bibNumber ? databaseRequest("participants", {
         query: {
           select: "id",
           race_id: `eq.${raceId}`,
@@ -2903,6 +2939,7 @@ async function handlePost(route: string, request: Request): Promise<Response> {
       bib_number: bibNumber,
       entry_type: entry.entryType,
       member_names: entry.memberNames,
+      ...nanxiEntry,
       phone: entry.entryType === "individual"
         ? String(payload.phone || "").trim() || null
         : null,
@@ -3121,9 +3158,9 @@ async function handlePost(route: string, request: Request): Promise<Response> {
         }
       }
     }
-    const result = await databaseRequest("rpc/process_timing_event_v3", {
+    const result = await databaseRequest(NANXI_RACES[raceId] ? "rpc/process_nanxi_checkpoint" : "rpc/process_timing_event_v3", {
       method: "POST",
-      body: { p_payload: payload },
+      body: { p_payload: NANXI_RACES[raceId] ? {...payload, source: "web-nfc-gate", participantId: null} : payload },
     });
     return jsonResponse(result, result.status === "duplicate_event_id" ? 200 : 201);
   }
