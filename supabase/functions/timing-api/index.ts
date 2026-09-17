@@ -472,7 +472,7 @@ function defaultRaceProfile(raceId: string): DatabaseRow {
   if (HOKA_BOUNDARY_RACE_IDS.has(raceId) || NANXI_RACES[raceId]) {
     return {
       race_id: raceId,
-      name: NANXI_RACES[raceId] ? `南希运动季 · 9 月 ${raceId.slice(-2)} 日` : raceId,
+      name: NANXI_RACES[raceId] ? `Nanxi · 9 月 ${raceId.slice(-2)} 日` : raceId,
       mode: "station_checkpoints",
       station_count: NANXI_RACES[raceId] ? 9 : 5,
       start_group_size: 1,

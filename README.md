@@ -80,6 +80,13 @@ The admin page owns race setup and NFC binding. The judge page owns race starts 
 audited timing decisions. The first phone checkpoint (`START`) only confirms that a
 participant is ready; the judge freely selects ready entries and starts them with the
 shared confirmation-click time.
+For Nanxi, the judge page links each station account directly to its NFC checkpoint.
+Manual confirmation and NFC taps use the same participant/station lock: whichever
+arrives first is accepted, and the other path is rejected as a duplicate or wrong
+progress. The Nanxi binding panel also accepts a CSV with
+`bibNumber,athleteName,member1,member2,member3,member4,cardCode,femaleCount`; this is
+the fastest way to bind a large roster, while the fixed bib number still determines
+the event type and member count.
 The leaderboard selector is intentionally limited to the Shanghai, Hangzhou, and Final
 HOKA stages plus one Supabase-backed test dataset.
 

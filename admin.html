@@ -212,6 +212,13 @@
       line-height: 1.4;
     }
 
+    .bulk-binding { margin-top: 12px; border: 1px solid #d5dde6; border-radius: 7px; padding: 10px 12px; background: #f7f9fb; }
+    .bulk-binding summary { cursor: pointer; color: #0f766e; font-weight: 850; }
+    .bulk-binding p { color: #627080; font-size: 12px; line-height: 1.55; }
+    .bulk-binding code { padding: 2px 4px; border-radius: 3px; background: #e8eef5; font-size: 11px; }
+    .file-button { display: inline-flex; min-height: 42px; align-items: center; border-radius: 6px; padding: 10px 14px; background: #0f766e; color: #ffffff; font-weight: 800; cursor: pointer; }
+    .file-button input { display: none; }
+
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -623,6 +630,12 @@
         <label>按固定选手号查找<input id="nanxiLookupBib" placeholder="例如 A-001 / F-001"></label>
         <div class="actions"><button type="button" id="nanxiLookupButton">查找选手 / 绑定手环</button><button type="button" id="nanxiScanButton" class="secondary">读取 NFC 手环号码</button></div>
         <p>已登记选手按编号调出资料后绑定手环；首次登记请填写下方固定选手号、姓名和成员。一队共用一个计时手环。</p>
+        <details class="bulk-binding">
+          <summary>批量登记 / 绑定（适合 200+ 人）</summary>
+          <p>上传 CSV 后自动逐条登记。表头：<code>bibNumber,athleteName,member1,member2,member3,member4,cardCode,femaleCount</code>。单人只填 athleteName，双人填 member1/2，四人接力填 member1–4；手环号码填在 cardCode。</p>
+          <div class="actions"><button type="button" id="downloadNanxiTemplate" class="secondary">下载当前日期模板</button><label class="file-button">选择 CSV<input id="nanxiBulkFile" type="file" accept=".csv,text/csv"></label></div>
+          <div id="nanxiBulkStatus" class="status" role="status">尚未选择文件。</div>
+        </details>
       </div>
       <form id="participantForm" class="grid">
         <label>
@@ -1685,7 +1698,7 @@
         .filter((race) => !primaryRaceIds.includes(race.raceId) && isDatedRaceSession(race.raceId))
         .sort((left, right) => right.raceId.localeCompare(left.raceId));
       const nanxiRaces = (payload.races || []).filter(race => Nanxi.isRace(race.raceId));
-      const groups = [buildRaceGroup("HOKA 比赛", primaryRaces), buildRaceGroup("南希运动季", nanxiRaces)];
+      const groups = [buildRaceGroup("HOKA 比赛", primaryRaces), buildRaceGroup("Nanxi", nanxiRaces)];
       if (datedRaces.length) groups.push(buildRaceGroup("新建比赛场次", datedRaces));
       raceIdSelect.replaceChildren(...groups);
 
@@ -1927,6 +1940,73 @@
           cardCodeInput.value = code; setStatus(`已读取 ${code}，请核对选手信息后保存。`); clearTimeout(timeout); abort.abort();
         });
       } catch(error) { clearTimeout(timeout); setStatus(`读取失败：${error.message}`,true); }
+    });
+
+    function parseNanxiCsv(text) {
+      const rows = []; let row = [], cell = "", quoted = false;
+      for (let i = 0; i < text.length; i += 1) {
+        const character = text[i];
+        if (character === '"' && text[i + 1] === '"' && quoted) { cell += '"'; i += 1; continue; }
+        if (character === '"') { quoted = !quoted; continue; }
+        if (character === ',' && !quoted) { row.push(cell.trim()); cell = ""; continue; }
+        if ((character === '\n' || character === '\r') && !quoted) {
+          if (character === '\r' && text[i + 1] === '\n') i += 1;
+          row.push(cell.trim()); cell = "";
+          if (row.some(Boolean)) rows.push(row);
+          row = []; continue;
+        }
+        cell += character;
+      }
+      row.push(cell.trim()); if (row.some(Boolean)) rows.push(row);
+      if (!rows.length) return [];
+      const headers = rows.shift().map(value => value.replace(/^\uFEFF/, '').trim().toLowerCase());
+      return rows.map(values => Object.fromEntries(headers.map((header, index) => [header, values[index] || ""])));
+    }
+
+    function csvCell(value) { return `"${String(value ?? "").replaceAll('"', '""')}"`; }
+    document.querySelector('#downloadNanxiTemplate').addEventListener('click', () => {
+      const raceId = selectedRaceId();
+      if (!Nanxi.isRace(raceId)) return;
+      const codes = Nanxi.codes(Nanxi.dayForRace(raceId));
+      const lines = [['bibNumber','athleteName','member1','member2','member3','member4','cardCode','femaleCount']];
+      codes.forEach(code => { for (let number = 1; number <= 20; number += 1) lines.push([`${code}-${String(number).padStart(3,'0')}`,'','','','','','','']); });
+      const blob = new Blob([lines.map(row => row.map(csvCell).join(',')).join('\n')], {type:'text/csv;charset=utf-8'});
+      const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `nanxi-${Nanxi.dayForRace(raceId)}-binding-template.csv`; link.click(); URL.revokeObjectURL(link.href);
+    });
+
+    document.querySelector('#nanxiBulkFile').addEventListener('change', async (event) => {
+      const input = event.target; const status = document.querySelector('#nanxiBulkStatus');
+      if (!input.files?.[0] || !Nanxi.isRace(selectedRaceId())) return;
+      const rows = parseNanxiCsv(await input.files[0].text());
+      if (!rows.length) { status.textContent = 'CSV 没有可导入的行。'; return; }
+      const raceId = selectedRaceId();
+      const existingPayload = await requestJson(`/api/participants?raceId=${encodeURIComponent(raceId)}`);
+      const existing = new Map((existingPayload.participants || []).map(row => [Nanxi.normalizeBib(row.bib_number), row]));
+      let success = 0; const failures = [];
+      for (let index = 0; index < rows.length; index += 1) {
+        const row = rows[index]; const bib = Nanxi.normalizeBib(row.bibnumber || row.bib || row['选手号']);
+        const code = bib.charAt(0); const config = Nanxi.groups[code];
+        try {
+          if (!config || !Nanxi.codes(Nanxi.dayForRace(raceId)).includes(code)) throw new Error('选手号与比赛日期不匹配');
+          const cardCode = String(row.cardcode || row.card || row['手环号码'] || '').trim().toUpperCase();
+          if (!cardCode) throw new Error('缺少 cardCode');
+          const memberNames = config.size === 1
+            ? [String(row.athletename || row.name || row['选手姓名'] || '').trim()]
+            : Array.from({length: config.size}, (_, memberIndex) => String(row[`member${memberIndex + 1}`] || row[`成员${memberIndex + 1}`] || '').trim());
+          if (memberNames.some(name => !name)) throw new Error(`需要填写 ${config.size} 名成员`);
+          const relay = code === 'F' || code === 'G';
+          const femaleValue = relay ? Number(row.femalecount || row['女性人数'] || 0) : null;
+          if (relay && (!Number.isInteger(femaleValue) || femaleValue < 0 || femaleValue > config.size)) throw new Error('女性人数无效');
+          const payload = {raceId, bibNumber: bib, cardCode, athleteName: config.size === 1 ? memberNames[0] : String(row.athletename || row.teamname || row['队伍名称'] || `Nanxi ${bib}`).trim(), entryType: config.type, memberNames, categoryCode: code, femaleCount: femaleValue, checkInStatus: 'checked_in'};
+          const old = existing.get(bib); let result;
+          if (old) result = await requestJson('/api/update-participant', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...payload, participantId: old.id, confirmation: 'UPDATE_PARTICIPANT', adminCode: adminAuthCode})});
+          else result = await requestJson('/api/participants', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+          existing.set(bib, result.participant); success += 1;
+        } catch (error) { failures.push(`${bib || `第 ${index + 2} 行`}: ${error.message}`); }
+        status.textContent = `正在导入 ${index + 1}/${rows.length} · 成功 ${success} · 失败 ${failures.length}`;
+      }
+      await refresh();
+      status.textContent = failures.length ? `完成：成功 ${success}，失败 ${failures.length}。${failures.slice(0, 3).join('；')}` : `完成：${success} 条已登记并绑定。`;
     });
 
     form.addEventListener("submit", async (event) => {

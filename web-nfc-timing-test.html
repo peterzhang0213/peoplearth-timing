@@ -926,7 +926,7 @@
       elements.brandLogo.src = nanxi ? "./assets/nanxi-logo.png" : usesHokaLogo
         ? "./assets/hoka-logo-white.png"
         : "./assets/src-logo.png";
-      elements.brandLogo.alt = nanxi ? "南希运动季" : usesHokaLogo ? "HOKA logo" : "SRC logo";
+      elements.brandLogo.alt = nanxi ? "Nanxi" : usesHokaLogo ? "HOKA logo" : "SRC logo";
       elements.brandLogo.classList.toggle("is-hoka", usesHokaLogo);
     }
 
@@ -1095,7 +1095,7 @@
         .filter((race) => !datedRaces.includes(race) && !nanxiRaces.includes(race))
         .sort((left, right) => raceOptionLabel(left).localeCompare(raceOptionLabel(right)));
       const groups = [];
-      if (nanxiRaces.length) groups.push(createRaceOptionGroup("南希运动季", nanxiRaces));
+      if (nanxiRaces.length) groups.push(createRaceOptionGroup("Nanxi", nanxiRaces));
       if (datedRaces.length) {
         groups.push(createRaceOptionGroup("可计时比赛场次", datedRaces));
       }

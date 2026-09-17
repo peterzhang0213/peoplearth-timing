@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>南希运动季 · 完赛成绩卡</title>
+  <title>Nanxi · 完赛成绩卡</title>
   <style>
     :root { --black:#0a0a08; --yellow:#fff04f; --muted:#c9be2e; --white:#f5f5f5; --panel:#12120f; --line:#514b13; }
     * { box-sizing:border-box; }
@@ -60,7 +60,7 @@
 <body>
   <main>
     <header><span>FINISH RESULT CARD</span><div><span id="clock"></span> <button id="fullscreenButton" type="button">全屏显示</button></div></header>
-    <img class="brand" src="./assets/nanxi-main-visual-cropped.svg" alt="南希运动季主视觉">
+    <img class="brand" src="./assets/nanxi-main-visual-cropped.svg" alt="Nanxi主视觉">
     <section class="intro"><div><h1>完赛成绩</h1></div><p>输入选手编号，生成个人或队伍的完赛卡片，用于现场拍照留存。</p></section>
     <form id="lookupForm">
       <input id="bibInput" autocomplete="off" placeholder="输入选手编号，例如 A-001 / C-001" aria-label="选手编号">
@@ -77,7 +77,7 @@
       <div class="splits"><h3>STATION SPLITS</h3><div id="splitGrid" class="split-grid"></div><div id="stamp" class="stamp"></div></div>
     </article>
   </main>
-  <section id="presentation" class="presentation" aria-label="全屏成绩"><button id="presentationExit" class="presentation-exit" type="button">退出全屏</button><img class="presentation-logo" src="./assets/nanxi-main-visual-cropped.svg" alt="南希运动季主视觉"><div><div id="presentationLabel" class="presentation-label"></div><div id="presentationName" class="presentation-name"></div><div id="presentationMembers" class="presentation-members"></div></div><div id="presentationTime" class="presentation-time">--:--:--</div></section>
+  <section id="presentation" class="presentation" aria-label="全屏成绩"><button id="presentationExit" class="presentation-exit" type="button">退出全屏</button><img class="presentation-logo" src="./assets/nanxi-main-visual-cropped.svg" alt="Nanxi主视觉"><div><div id="presentationLabel" class="presentation-label"></div><div id="presentationName" class="presentation-name"></div><div id="presentationMembers" class="presentation-members"></div></div><div id="presentationTime" class="presentation-time">--:--:--</div></section>
   <script src="./timing-api.js"></script>
   <script src="./nanxi.js"></script>
   <script>

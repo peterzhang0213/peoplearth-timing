@@ -40,9 +40,17 @@ insert into public.race_profiles (race_id, name, mode, station_count, checkpoint
 select race_id, name, 'station_checkpoints', 9,
   '["START","STATION_2_START","STATION_3_START","STATION_4_START","STATION_5_START","STATION_6_START","STATION_7_START","STATION_8_START","STATION_9_START","END"]'::jsonb,
   'individual', 1, 'active', false, now(), now()
-from (values ('nanxi-race-20260919', '南希运动季 · 9 月 19 日'),
-             ('nanxi-race-20260920', '南希运动季 · 9 月 20 日')) as races(race_id, name)
+from (values ('nanxi-race-20260919', 'Nanxi · 9 月 19 日'),
+             ('nanxi-race-20260920', 'Nanxi · 9 月 20 日')) as races(race_id, name)
 on conflict (race_id) do nothing;
+
+update public.race_profiles
+set name = case race_id
+  when 'nanxi-race-20260919' then 'Nanxi · 9 月 19 日'
+  when 'nanxi-race-20260920' then 'Nanxi · 9 月 20 日'
+end,
+updated_at = now()
+where race_id in ('nanxi-race-20260919', 'nanxi-race-20260920');
 
 -- Both Nanxi input paths take the same lock as the NFC routine before reading progress.
 -- Only the Edge API can execute this routine; it authenticates station judges first.

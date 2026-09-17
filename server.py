@@ -598,7 +598,7 @@ def default_race_profile(race_id: str) -> dict:
     if is_nanxi_race_id(race_id):
         return make_race_profile(
             race_id,
-            "南希运动季 · " + ("9 月 19 日" if race_id.endswith("20260919") else "9 月 20 日"),
+            "Nanxi · " + ("9 月 19 日" if race_id.endswith("20260919") else "9 月 20 日"),
             "station_checkpoints",
             9,
             checkpoints=build_station_boundary_checkpoints(9),
@@ -660,7 +660,7 @@ def ensure_default_race_profiles(db: sqlite3.Connection) -> None:
         ),
         (
             "nanxi-race-20260919",
-            "南希运动季 · 9 月 19 日",
+            "Nanxi · 9 月 19 日",
             "station_checkpoints",
             9,
             build_station_boundary_checkpoints(9),
@@ -668,7 +668,7 @@ def ensure_default_race_profiles(db: sqlite3.Connection) -> None:
         ),
         (
             "nanxi-race-20260920",
-            "南希运动季 · 9 月 20 日",
+            "Nanxi · 9 月 20 日",
             "station_checkpoints",
             9,
             build_station_boundary_checkpoints(9),

@@ -37,7 +37,7 @@
       const checkpointTimes = {START: new Date(at).toISOString()};
       Object.values(stationSplits).forEach((ms, j) => { at += ms; checkpointTimes[checkpoints[j + 1]] = new Date(at).toISOString(); });
       return {participantId: bibNumber, bibNumber, categoryCode: code, categoryLabel: group.label,
-        athleteName: group.size === 1 ? members[0] : ["North Pace", "追风小队", "南希力量", "一起向前"][i % 4] + ` ${i + 1}`,
+        athleteName: group.size === 1 ? members[0] : ["North Pace", "追风小队", "Nanxi 力量", "一起向前"][i % 4] + ` ${i + 1}`,
         entryType: group.type, memberNames: members, memberCount: group.size, femaleCount,
         startTime, finishTime: new Date(at).toISOString(), rawElapsedMs, baseElapsedMs: rawElapsedMs,
         deductionMs, penaltyMs, adjustmentMs: penaltyMs, elapsedMs: rawElapsedMs + penaltyMs - deductionMs,
@@ -49,7 +49,7 @@
       rows.forEach((row, i) => { row.rank = i + 1; row.categoryRank = i + 1; row.gapMs = row.elapsedMs - rows[0].elapsedMs; });
     }
     leaderboard.sort((a,b) => a.elapsedMs - b.elapsedMs);
-    return {ok: true, raceId: races[day], race: {raceId: races[day], brand: "nanxi", name: `南希运动季 · 9 月 ${day} 日`, stationCount: 9, mode: "station_checkpoints", checkpointLayout: "station_boundaries", checkpoints, status: "active", categories: codes(day).map(code => ({code, label: groups[code].label}))}, generatedAt: new Date().toISOString(), leaderboard};
+    return {ok: true, raceId: races[day], race: {raceId: races[day], brand: "nanxi", name: `Nanxi · 9 月 ${day} 日`, stationCount: 9, mode: "station_checkpoints", checkpointLayout: "station_boundaries", checkpoints, status: "active", categories: codes(day).map(code => ({code, label: groups[code].label}))}, generatedAt: new Date().toISOString(), leaderboard};
   }
   async function fetchResults(day, signal) {
     const response = await window.timingApiFetch(`/api/leaderboard?raceId=${races[day]}`, {signal});
