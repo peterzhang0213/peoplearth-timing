@@ -152,6 +152,13 @@ HOKA_BOUNDARY_CHECKPOINT_RACE_IDS = {
     "hoka-race-demo",
 }
 NANXI_RACE_IDS = {"nanxi-race-20260919", "nanxi-race-20260920"}
+NANXI_TEMPLATE_IDS = {"nanxi-template-20260919", "nanxi-template-20260920"}
+NANXI_RACE_NAMES = {
+    "nanxi-race-20260919": "Nanxi · 9 月 19 日",
+    "nanxi-race-20260920": "Nanxi · 9 月 20 日",
+    "nanxi-template-20260919": "Nanxi · 9 月 19 日模板",
+    "nanxi-template-20260920": "Nanxi · 9 月 20 日模板",
+}
 NANXI_CATEGORY_LABELS = {
     "A": "男子单人",
     "B": "女子单人",
@@ -595,6 +602,16 @@ def make_race_profile(
 
 
 def default_race_profile(race_id: str) -> dict:
+    if race_id in NANXI_TEMPLATE_IDS:
+        return make_race_profile(
+            race_id,
+            NANXI_RACE_NAMES[race_id],
+            "station_checkpoints",
+            9,
+            checkpoints=build_station_boundary_checkpoints(9),
+            entry_type="individual",
+            is_template=True,
+        )
     if is_nanxi_race_id(race_id):
         return make_race_profile(
             race_id,
@@ -727,6 +744,13 @@ def ensure_default_race_profiles(db: sqlite3.Connection) -> None:
             "Peoplearth Simulation · 001",
         ),
     )
+    for race_id, name in NANXI_RACE_NAMES.items():
+        if race_id in NANXI_TEMPLATE_IDS:
+            continue
+        db.execute(
+            "UPDATE race_profiles SET name = ?, updated_at = ? WHERE race_id = ? AND name <> ?",
+            (name, utc_now(), race_id, name),
+        )
     db.execute(
         "UPDATE race_profiles SET name = ?, updated_at = ? WHERE race_id = ? AND name <> ?",
         (
@@ -763,6 +787,8 @@ def race_profile_from_row(row: sqlite3.Row | dict) -> dict:
 
 
 def race_profile_response(profile: dict) -> dict:
+    race_id = profile["race_id"]
+    display_name = NANXI_RACE_NAMES.get(race_id, profile["name"])
     checkpoint_layout = None
     if profile["mode"] == "station_checkpoints":
         checkpoint_layout = (
@@ -771,8 +797,8 @@ def race_profile_response(profile: dict) -> dict:
             else "station_boundaries"
         )
     return {
-        "raceId": profile["race_id"],
-        "name": profile["name"],
+        "raceId": race_id,
+        "name": display_name,
         "mode": profile["mode"],
         "stationCount": profile["station_count"],
         "startGroupSize": profile.get("start_group_size") or 1,

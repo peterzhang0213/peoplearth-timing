@@ -44,6 +44,23 @@ from (values ('nanxi-race-20260919', 'Nanxi · 9 月 19 日'),
              ('nanxi-race-20260920', 'Nanxi · 9 月 20 日')) as races(race_id, name)
 on conflict (race_id) do nothing;
 
+-- Read-only admin templates for quickly creating the two Nanxi race days.
+insert into public.race_profiles (race_id, name, mode, station_count, checkpoints, entry_type,
+  start_group_size, status, is_template, created_at, updated_at)
+select race_id, name, 'station_checkpoints', 9,
+  '["START","STATION_2_START","STATION_3_START","STATION_4_START","STATION_5_START","STATION_6_START","STATION_7_START","STATION_8_START","STATION_9_START","END"]'::jsonb,
+  'individual', 1, 'active', true, now(), now()
+from (values ('nanxi-template-20260919', 'Nanxi · 9 月 19 日模板'),
+             ('nanxi-template-20260920', 'Nanxi · 9 月 20 日模板')) as templates(race_id, name)
+on conflict (race_id) do update set
+  name = excluded.name,
+  mode = excluded.mode,
+  station_count = excluded.station_count,
+  checkpoints = excluded.checkpoints,
+  entry_type = excluded.entry_type,
+  is_template = true,
+  updated_at = now();
+
 update public.race_profiles
 set name = case race_id
   when 'nanxi-race-20260919' then 'Nanxi · 9 月 19 日'
