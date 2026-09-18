@@ -423,6 +423,7 @@ def init_db() -> None:
         ensure_race_profile_columns(db)
         ensure_timing_event_columns(db)
         ensure_default_race_profiles(db)
+        ensure_default_judge_station_accounts(db)
         db.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_timing_events_auto_progress
@@ -762,6 +763,35 @@ def ensure_default_race_profiles(db: sqlite3.Connection) -> None:
     )
 
 
+def ensure_default_judge_station_accounts(db: sqlite3.Connection) -> None:
+    """Provision the standard Nanxi station logins without overwriting custom accounts."""
+    now = utc_now()
+    for race_id in sorted(NANXI_RACE_IDS):
+        for station_number in range(1, 10):
+            role = f"station_{station_number}"
+            username = role
+            password = f"station{station_number}"
+            salt, password_hash = create_judge_password(password)
+            db.execute(
+                """
+                INSERT INTO judge_station_accounts (
+                  race_id, role, username, password_hash, password_salt,
+                  display_name, active, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+                ON CONFLICT (race_id, role) DO NOTHING
+                """,
+                (
+                    race_id,
+                    role,
+                    username,
+                    password_hash,
+                    salt,
+                    f"站点 {station_number}",
+                    now,
+                    now,
+                ),
+            )
 def race_profile_from_row(row: sqlite3.Row | dict) -> dict:
     source = row_to_dict(row) if isinstance(row, sqlite3.Row) else row
     checkpoints = source.get("checkpoints")
@@ -1746,6 +1776,10 @@ class TimingHandler(SimpleHTTPRequestHandler):
             self.handle_post_reset_race()
             return
 
+        if parsed.path == "/api/delete-nanxi-test-data":
+            self.handle_post_delete_nanxi_test_data()
+            return
+
         if parsed.path == "/api/delete-participant":
             self.handle_post_delete_participant()
             return
@@ -2359,6 +2393,80 @@ class TimingHandler(SimpleHTTPRequestHandler):
                         "startCheckins": start_checkin_count,
                     },
                     "raceProfilePreserved": True,
+                }
+            )
+        except (json.JSONDecodeError, ValueError) as error:
+            self.send_json({"ok": False, "error": str(error)}, HTTPStatus.BAD_REQUEST)
+
+    def handle_post_delete_nanxi_test_data(self) -> None:
+        try:
+            payload = self.read_json_body()
+            race_id = str(payload.get("raceId") or "").strip()
+            supplied_code = str(payload.get("adminCode") or "")
+            confirmation = str(payload.get("confirmation") or "").strip()
+            if race_id not in NANXI_RACE_IDS:
+                raise ValueError("This endpoint only supports Nanxi race sessions")
+            if confirmation != "DELETE_NANXI_TEST_DATA":
+                raise ValueError("Test data deletion confirmation is required")
+            if not admin_code_matches(supplied_code):
+                self.send_json(
+                    {"ok": False, "error": "Invalid administrator clear code"},
+                    HTTPStatus.FORBIDDEN,
+                )
+                return
+
+            profile = get_race_profile(race_id)
+            if error_payload := template_race_error(profile):
+                self.send_json(error_payload, HTTPStatus.CONFLICT)
+                return
+            with connect_db() as db:
+                db.execute("BEGIN IMMEDIATE")
+                participant_rows = db.execute(
+                    "SELECT id FROM participants WHERE race_id = ? AND card_code LIKE 'NANXI-TEST-%'",
+                    (race_id,),
+                ).fetchall()
+                participant_ids = [int(row["id"]) for row in participant_rows]
+                if participant_ids:
+                    placeholders = ",".join("?" for _ in participant_ids)
+                    args = [race_id, *participant_ids]
+                    event_count = db.execute(
+                        f"DELETE FROM timing_events WHERE race_id = ? AND participant_id IN ({placeholders})",
+                        args,
+                    ).rowcount
+                    adjustment_count = db.execute(
+                        f"DELETE FROM result_adjustments WHERE race_id = ? AND participant_id IN ({placeholders})",
+                        args,
+                    ).rowcount
+                    manual_count = db.execute(
+                        f"DELETE FROM manual_results WHERE race_id = ? AND participant_id IN ({placeholders})",
+                        args,
+                    ).rowcount
+                    control_count = db.execute(
+                        f"DELETE FROM participant_timing_controls WHERE race_id = ? AND participant_id IN ({placeholders})",
+                        args,
+                    ).rowcount
+                    checkin_count = db.execute(
+                        f"DELETE FROM start_checkins WHERE race_id = ? AND participant_id IN ({placeholders})",
+                        args,
+                    ).rowcount
+                else:
+                    event_count = adjustment_count = manual_count = control_count = checkin_count = 0
+                participant_count = db.execute(
+                    "DELETE FROM participants WHERE race_id = ? AND card_code LIKE 'NANXI-TEST-%'",
+                    (race_id,),
+                ).rowcount
+            self.send_json(
+                {
+                    "ok": True,
+                    "raceId": race_id,
+                    "deleted": {
+                        "participants": participant_count,
+                        "timingEvents": event_count,
+                        "resultAdjustments": adjustment_count,
+                        "manualResults": manual_count,
+                        "timingControls": control_count,
+                        "startCheckins": checkin_count,
+                    },
                 }
             )
         except (json.JSONDecodeError, ValueError) as error:

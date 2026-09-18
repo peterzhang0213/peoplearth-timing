@@ -103,5 +103,37 @@ class NanxiTests(unittest.TestCase):
         server.save_race_profile(profile);server.init_db()
         self.assertEqual(server.get_race_profile(profile['race_id'])['station_count'],10)
 
+    def test_nanxi_station_accounts_are_provisioned_for_both_days(self):
+        for race_id in ('nanxi-race-20260919', 'nanxi-race-20260920'):
+            auth = self.request_json('/api/judge-auth', {
+                'raceId': race_id,
+                'username': 'station_1',
+                'password': 'station1',
+            })
+            self.assertEqual(auth['role'], 'station_1')
+            self.assertEqual(auth['allowedCheckpoints'], ['STATION_2_START'])
+            finish = self.request_json('/api/judge-auth', {
+                'raceId': race_id,
+                'username': 'station_9',
+                'password': 'station9',
+            })
+            self.assertEqual(finish['allowedCheckpoints'], ['END'])
+
+    def test_delete_nanxi_test_data_removes_only_generated_records(self):
+        test_entry = self.register('A-001', card='NANXI-TEST-A-001')
+        normal_entry = self.register('A-002', card='NANXI-LIVE-A-002')
+        self.checkpoint(test_entry, 0)
+        self.checkpoint(normal_entry, 0)
+        deleted = self.request_json('/api/delete-nanxi-test-data', {
+            'raceId': 'nanxi-race-20260919',
+            'confirmation': 'DELETE_NANXI_TEST_DATA',
+            'adminCode': 'test-clear-code-1234',
+        })
+        self.assertEqual(deleted['deleted']['participants'], 1)
+        participants = self.request_json('/api/participants?raceId=nanxi-race-20260919')['participants']
+        self.assertEqual([row['card_code'] for row in participants], ['NANXI-LIVE-A-002'])
+        events = self.request_json('/api/timing-events?raceId=nanxi-race-20260919')['events']
+        self.assertEqual([row['card_code'] for row in events], ['NANXI-LIVE-A-002'])
+
 
 if __name__ == '__main__': unittest.main()

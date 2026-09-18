@@ -590,6 +590,10 @@
       { raceId: "hoka-race-final", name: "HOKA 团队挑战赛 - 上海决赛" },
       { raceId: "hoka-race-demo", name: "HOKA 团队挑战赛 - 测试数据" }
     ];
+    const nanxiRaceCatalog = [
+      { raceId: "nanxi-race-20260919", name: "Nanxi · 9 月 19 日", stationCount: 9 },
+      { raceId: "nanxi-race-20260920", name: "Nanxi · 9 月 20 日", stationCount: 9 }
+    ];
     const primaryRaceIds = new Set(demoRaceSessions.map((race) => race.raceId));
     const judgeRoleOptions = [
       {role:'admin',label:'全局总控'}, {role:'start',label:'起点 / 发枪'},
@@ -624,6 +628,7 @@
     let activeJudgeScope = "admin";
     let pendingRollbackParticipantId = null;
     let preferredRaceId = new URLSearchParams(location.search).get("raceId") || "";
+    let authRaceCatalog = new Map();
     let judgeConsoleStarted = false;
     let demoEntries = createDemoEntries();
 
@@ -867,6 +872,30 @@
           const rightOrder = order.get(right.raceId) ?? demoRaceSessions.length;
           return leftOrder - rightOrder || right.raceId.localeCompare(left.raceId);
         });
+    }
+
+    function mergeRaceCatalog(races = []) {
+      const merged = new Map((races || []).map((race) => [race.raceId, race]));
+      nanxiRaceCatalog.forEach((race) => {
+        if (!merged.has(race.raceId)) merged.set(race.raceId, { ...race, mode: "station_checkpoints", checkpointLayout: "station_boundaries" });
+      });
+      return managedRaces(Array.from(merged.values()));
+    }
+
+    function updateAuthRoleOptions() {
+      const current = elements.authUsername.value;
+      const race = authRaceCatalog.get(elements.authRaceId.value);
+      const stationCount = Math.max(0, Number(race?.stationCount || 0));
+      const options = judgeRoleOptions.filter((option) => {
+        if (option.role === "admin" || option.role === "start") return true;
+        const stationNumber = Number(option.role.replace("station_", ""));
+        return stationNumber <= stationCount;
+      });
+      elements.authUsername.replaceChildren(...options.map((option) => new Option(option.label, option.role)));
+      elements.authUsername.value = options.some((option) => option.role === current)
+        ? current
+        : options.find((option) => option.role === "admin")?.role || options[0]?.role || "";
+      syncResponsiveSelect(elements.authUsername);
     }
 
     function configureEntryBranding() {
@@ -1494,7 +1523,8 @@
 
     async function loadAuthRaces() {
       const payload = await readJson(await window.timingApiFetch("/api/races"));
-      const races = managedRaces(payload.races);
+      const races = mergeRaceCatalog(payload.races);
+      authRaceCatalog = new Map(races.map((race) => [race.raceId, race]));
       elements.authRaceId.replaceChildren(
         new Option("请选择比赛场次", ""),
         ...races.map((race) => new Option(raceDisplayName(race), race.raceId))
@@ -1504,6 +1534,7 @@
         ? requested
         : races[0]?.raceId || "";
       syncResponsiveSelect(elements.authRaceId);
+      updateAuthRoleOptions();
     }
 
     async function loadRaces() {
@@ -1518,7 +1549,7 @@
       activeCategory = "all";
       const requested = preferredRaceId || new URLSearchParams(location.search).get("raceId") || "";
       const payload = await readJson(await window.timingApiFetch("/api/races"));
-      const races = managedRaces(payload.races);
+      const races = mergeRaceCatalog(payload.races);
       elements.raceId.replaceChildren(...races.map((race) => new Option(raceDisplayName(race), race.raceId)));
       elements.raceId.value = races.some((race) => race.raceId === requested) ? requested : races[0]?.raceId || "";
       syncResponsiveSelect(elements.raceId);
@@ -2017,6 +2048,7 @@
     elements.switchAccountButton.addEventListener("click", () => {
       elements.authRaceId.value = elements.raceId.value;
       syncResponsiveSelect(elements.authRaceId);
+      updateAuthRoleOptions();
       showAuthentication("请选择要切换的裁判岗位并输入密码。", { username: judgeUsername || "admin" });
     });
     elements.messageAction.addEventListener("click", () => {
@@ -2044,6 +2076,9 @@
       updateBranding();
       updateUrl();
       await loadData();
+    });
+    elements.authRaceId.addEventListener("change", () => {
+      updateAuthRoleOptions();
     });
     document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeModals(); });
 
