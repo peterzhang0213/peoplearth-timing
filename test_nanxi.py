@@ -53,7 +53,7 @@ class NanxiTests(unittest.TestCase):
         result = self.request_json('/api/leaderboard?raceId='+entry['race_id'])['leaderboard'][0]
         self.assertIsNotNone(result['startTime'])
 
-    def test_nine_stations_can_mix_inputs_and_handle_simultaneous_confirmation(self):
+    def test_eight_stations_can_mix_inputs_and_handle_simultaneous_confirmation(self):
         entry=self.register('C-001')
         self.checkpoint(entry,0,'manual')
         def write(method):
@@ -64,20 +64,20 @@ class NanxiTests(unittest.TestCase):
         self.assertEqual(statuses.count('accepted'),1)
         self.assertEqual(self.checkpoint(entry,3)['status'],'wrong_checkpoint')
         self.assertEqual(self.checkpoint(entry,2,seconds=100)['status'],'invalid_progress')
-        for index in range(2,10): self.assertEqual(self.checkpoint(entry,index,'manual' if index%2 else 'nfc')['status'],'accepted')
+        for index in range(2,9): self.assertEqual(self.checkpoint(entry,index,'manual' if index%2 else 'nfc')['status'],'accepted')
         result=self.request_json('/api/leaderboard?raceId='+entry['race_id'])['leaderboard'][0]
-        self.assertEqual(result['elapsedMs'],2700000)
+        self.assertEqual(result['elapsedMs'],2400000)
         self.assertEqual(result['categoryRank'],1)
-        self.assertEqual(len(result['stationSplits']),9)
+        self.assertEqual(len(result['stationSplits']),8)
         self.assertTrue(all(ms==300000 for ms in result['stationSplits'].values()))
 
     def test_relay_deduction_penalty_and_independent_ranks(self):
         entries=[self.register('F-001',0),self.register('F-002',1),self.register('G-001',3),self.register('G-002',4)]
         for entry in entries:
-            for index in range(10): self.checkpoint(entry,index)
+            for index in range(9): self.checkpoint(entry,index)
         self.request_json('/api/result-adjustments',{'raceId':entries[1]['race_id'],'participantId':entries[1]['id'],'adjustmentSeconds':60,'reason':'罚时','adminCode':'test-clear-code-1234'})
         result={row['bibNumber']:row for row in self.request_json('/api/leaderboard?raceId='+entries[0]['race_id'])['leaderboard']}
-        self.assertEqual(result['F-002']['elapsedMs'],2460000)
+        self.assertEqual(result['F-002']['elapsedMs'],2160000)
         self.assertEqual(result['F-002']['deductionMs'],300000)
         self.assertEqual(result['F-002']['penaltyMs'],60000)
         self.assertEqual(result['F-002']['categoryRank'],1)
@@ -88,7 +88,7 @@ class NanxiTests(unittest.TestCase):
 
     def test_manual_results_rank_by_final_time_and_unfinished_have_no_rank(self):
         a=self.register('A-001'); b=self.register('A-002'); self.register('B-001')
-        for index in range(10):self.checkpoint(a,index)
+        for index in range(9):self.checkpoint(a,index)
         self.request_json('/api/manual-results',{'raceId':b['race_id'],'participantId':b['id'],'entryMode':'elapsed','elapsedSeconds':1200,'reason':'备用计时','adminCode':'test-clear-code-1234'})
         results={row['bibNumber']:row for row in self.request_json('/api/leaderboard?raceId='+a['race_id'])['leaderboard']}
         self.assertEqual(results['A-002']['categoryRank'],1)
@@ -97,8 +97,8 @@ class NanxiTests(unittest.TestCase):
 
     def test_station_roles_and_custom_count_persist(self):
         profile=server.get_race_profile('nanxi-race-20260919')
-        self.assertEqual(server.judge_role_checkpoints(profile,'station_9'),['END'])
-        self.assertEqual(server.judge_role_checkpoints(profile,'station_10'),[])
+        self.assertEqual(server.judge_role_checkpoints(profile,'station_8'),['END'])
+        self.assertEqual(server.judge_role_checkpoints(profile,'station_9'),[])
         profile['station_count']=10;profile['checkpoints']=server.build_station_boundary_checkpoints(10)
         server.save_race_profile(profile);server.init_db()
         self.assertEqual(server.get_race_profile(profile['race_id'])['station_count'],10)
@@ -114,8 +114,8 @@ class NanxiTests(unittest.TestCase):
             self.assertEqual(auth['allowedCheckpoints'], ['STATION_2_START'])
             finish = self.request_json('/api/judge-auth', {
                 'raceId': race_id,
-                'username': 'station_9',
-                'password': 'station9',
+                'username': 'station_8',
+                'password': 'station8',
             })
             self.assertEqual(finish['allowedCheckpoints'], ['END'])
 

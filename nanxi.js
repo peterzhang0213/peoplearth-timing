@@ -22,14 +22,14 @@
   }
   function mock(day) {
     const names = ["林峻", "顾妍", "周凯", "沈悦", "陈一", "张晨", "李然", "王悦", "许嘉", "刘畅"];
-    const checkpoints = ["START", ...Array.from({length: 8}, (_, i) => `STATION_${i + 2}_START`), "END"];
+    const checkpoints = ["START", ...Array.from({length: 7}, (_, i) => `STATION_${i + 2}_START`), "END"];
     const leaderboard = codes(day).flatMap(code => Array.from({length: 20}, (_, i) => {
       const group = groups[code];
       const bibNumber = `${code}-${String(i + 1).padStart(3, "0")}`;
       const members = Array.from({length: group.size}, (_, m) => names[(i + m) % names.length]);
       const femaleCount = day === "20" ? i % (group.size + 1) : ({A: 0, B: 1, C: 0, D: 2, E: 1}[code]);
       const deductionMs = day === "20" ? Math.min(femaleCount, 2) * 300000 : 0;
-      const stationSplits = Object.fromEntries(Array.from({length: 9}, (_, j) => [`station${j + 1}Ms`, (230 + i * 14 + j * 17 % 90) * 1000]));
+      const stationSplits = Object.fromEntries(Array.from({length: 8}, (_, j) => [`station${j + 1}Ms`, (230 + i * 14 + j * 17 % 90) * 1000]));
       const rawElapsedMs = Object.values(stationSplits).reduce((a, b) => a + b, 0);
       const penaltyMs = i % 7 === 3 ? 60000 : 0;
       const startTime = `2026-09-${day}T09:00:00+08:00`;
@@ -41,7 +41,7 @@
         entryType: group.type, memberNames: members, memberCount: group.size, femaleCount,
         startTime, finishTime: new Date(at).toISOString(), rawElapsedMs, baseElapsedMs: rawElapsedMs,
         deductionMs, penaltyMs, adjustmentMs: penaltyMs, elapsedMs: rawElapsedMs + penaltyMs - deductionMs,
-        status: "finished", current: "Finished", latestCheckpoint: "END", progressIndex: 9, timerRunning: false,
+        status: "finished", current: "Finished", latestCheckpoint: "END", progressIndex: 8, timerRunning: false,
         checkpointTimes, stationSplits};
     }));
     for (const code of codes(day)) {
@@ -49,7 +49,7 @@
       rows.forEach((row, i) => { row.rank = i + 1; row.categoryRank = i + 1; row.gapMs = row.elapsedMs - rows[0].elapsedMs; });
     }
     leaderboard.sort((a,b) => a.elapsedMs - b.elapsedMs);
-    return {ok: true, raceId: races[day], race: {raceId: races[day], brand: "nanxi", name: `Nanxi · 9 月 ${day} 日`, stationCount: 9, mode: "station_checkpoints", checkpointLayout: "station_boundaries", checkpoints, status: "active", categories: codes(day).map(code => ({code, label: groups[code].label}))}, generatedAt: new Date().toISOString(), leaderboard};
+    return {ok: true, raceId: races[day], race: {raceId: races[day], brand: "nanxi", name: `Nanxi · 9 月 ${day} 日`, stationCount: 8, mode: "station_checkpoints", checkpointLayout: "station_boundaries", checkpoints, status: "active", categories: codes(day).map(code => ({code, label: groups[code].label}))}, generatedAt: new Date().toISOString(), leaderboard};
   }
   async function fetchResults(day, signal) {
     const response = await window.timingApiFetch(`/api/leaderboard?raceId=${races[day]}`, {signal});

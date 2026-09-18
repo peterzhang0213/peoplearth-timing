@@ -608,8 +608,8 @@ def default_race_profile(race_id: str) -> dict:
             race_id,
             NANXI_RACE_NAMES[race_id],
             "station_checkpoints",
-            9,
-            checkpoints=build_station_boundary_checkpoints(9),
+            8,
+            checkpoints=build_station_boundary_checkpoints(8),
             entry_type="individual",
             is_template=True,
         )
@@ -618,8 +618,8 @@ def default_race_profile(race_id: str) -> dict:
             race_id,
             "Nanxi · " + ("9 月 19 日" if race_id.endswith("20260919") else "9 月 20 日"),
             "station_checkpoints",
-            9,
-            checkpoints=build_station_boundary_checkpoints(9),
+            8,
+            checkpoints=build_station_boundary_checkpoints(8),
             entry_type="individual",
         )
     if race_id in HOKA_BOUNDARY_CHECKPOINT_RACE_IDS:
@@ -680,16 +680,16 @@ def ensure_default_race_profiles(db: sqlite3.Connection) -> None:
             "nanxi-race-20260919",
             "Nanxi · 9 月 19 日",
             "station_checkpoints",
-            9,
-            build_station_boundary_checkpoints(9),
+            8,
+            build_station_boundary_checkpoints(8),
             "individual",
         ),
         (
             "nanxi-race-20260920",
             "Nanxi · 9 月 20 日",
             "station_checkpoints",
-            9,
-            build_station_boundary_checkpoints(9),
+            8,
+            build_station_boundary_checkpoints(8),
             "individual",
         ),
     ):
@@ -767,7 +767,7 @@ def ensure_default_judge_station_accounts(db: sqlite3.Connection) -> None:
     """Provision the standard Nanxi station logins without overwriting custom accounts."""
     now = utc_now()
     for race_id in sorted(NANXI_RACE_IDS):
-        for station_number in range(1, 10):
+        for station_number in range(1, 9):
             role = f"station_{station_number}"
             username = role
             password = f"station{station_number}"

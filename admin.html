@@ -772,7 +772,7 @@
 
     <section id="judgeAccountConfiguration">
       <h2>裁判台账号</h2>
-      <p>为当前比赛配置起点及各站点独立账号。Nanxi 默认账号为 <code>station_1</code>–<code>station_9</code>，密码对应 <code>station1</code>–<code>station9</code>；密码只保存为不可逆哈希，留空表示沿用原密码。</p>
+      <p>为当前比赛配置起点及各站点独立账号。Nanxi 默认账号为 <code>station_1</code>–<code>station_8</code>，密码对应 <code>station1</code>–<code>station8</code>；密码只保存为不可逆哈希，留空表示沿用原密码。</p>
       <div id="judgeAccountsRows" class="grid"></div>
       <div class="actions">
         <button id="saveJudgeAccountsButton" type="button">保存裁判账号</button>
@@ -1041,7 +1041,7 @@
         raceId: "nanxi-template-20260919",
         sessionRaceId: "nanxi-race-20260919",
         name: "Nanxi · 9 月 19 日模板",
-        stationCount: 9,
+        stationCount: 8,
         startGroupSize: 1,
         entryType: "individual",
         mode: "station_checkpoints",
@@ -1052,7 +1052,7 @@
         raceId: "nanxi-template-20260920",
         sessionRaceId: "nanxi-race-20260920",
         name: "Nanxi · 9 月 20 日模板",
-        stationCount: 9,
+        stationCount: 8,
         startGroupSize: 1,
         entryType: "individual",
         mode: "station_checkpoints",
@@ -1667,7 +1667,7 @@
       if (Nanxi.isRace(race.raceId)) {
         const codes = Nanxi.codes(Nanxi.dayForRace(race.raceId));
         const groups = codes.map((code) => Nanxi.groups[code]?.label).filter(Boolean).join(" / ");
-        return `${race.name || race.raceId} · ${groups} · ${race.stationCount || 9} 站`;
+        return `${race.name || race.raceId} · ${groups} · ${race.stationCount || 8} 站`;
       }
       const official = officialRaces.find((item) => item.raceId === race.raceId);
       const category = entryTypeLabel(race.entryType || official?.entryType || "individual");

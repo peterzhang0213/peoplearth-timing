@@ -76,6 +76,14 @@ Real queries use `timing-api.js` over HTTP(S), never fall back to mock results, 
 only display a photo card for finished entries. A `file://` page can show demo
 cards offline and provides a link to the local service for real queries.
 
+Nanxi on both September 19 and 20 uses eight stations: START, STATION_2_START
+through STATION_8_START, then END (station 8 finish). Existing races with accepted
+timing events must be reviewed before changing the course. Apply
+`20260918090000_nanxi_eight_stations.sql` after the Nanxi schema migration.
+The venue screen targets a 5 m × 3.5 m (10:7) display, e.g. 2000 × 1400 pixels;
+it shows 20 entries per page in two columns and rotates pages every 15 seconds.
+Use the footer controls to change pages or pause rotation. Mobile shows 10 per page.
+
 The admin page owns race setup and NFC binding. The judge page owns race starts and
 audited timing decisions. The first phone checkpoint (`START`) only confirms that a
 participant is ready; the judge freely selects ready entries and starts them with the
