@@ -45,7 +45,7 @@
   const N = window.Nanxi, $ = selector => document.querySelector(selector);
   const params = new URLSearchParams(location.search), demo = params.get('demo') === '1';
   let day = N.isRace(params.get('raceId')) ? N.dayForRace(params.get('raceId')) : params.get('day') === '20' ? '20' : '19';
-  let group = N.codes(day).includes(params.get('group')) ? params.get('group') : N.codes(day)[0];
+  let group = params.get('group') === 'all' || N.codes(day).includes(params.get('group')) ? (params.get('group') || 'all') : 'all';
   let payload = null, version = 0, controller = null, loading = false;
   const openEntries = new Set();
   const statusLabels = {finished:'已完赛', racing:'比赛中', paused:'暂停', dnf:'退赛', dns:'未出发', not_started:'待出发'};
@@ -53,15 +53,16 @@
   function link(page, extra = {}) { const query = new URLSearchParams({day, demo:demo?'1':'0', ...extra}); return `./${page}?${query}`; }
   function controls() {
     document.querySelectorAll('[data-day]').forEach(button => button.setAttribute('aria-pressed',String(button.dataset.day === day)));
-    $('#groups').innerHTML = N.codes(day).map(code => `<button type="button" data-group="${code}" aria-pressed="${code === group}">${N.groups[code].label}</button>`).join('');
+    $('#groups').innerHTML = [`<button type="button" data-group="all" aria-pressed="${group === 'all'}">全部组别</button>`, ...N.codes(day).map(code => `<button type="button" data-group="${code}" aria-pressed="${code === group}">${N.groups[code].label}</button>`)].join('');
     $('#screenLink').href = link('nanxi-leaderboard-preview.html',{group}); $('#finishLink').href = link('finish-result.html');
     const url = new URL(location.href); url.searchParams.set('raceId',N.races[day]); url.searchParams.set('group',group); history.replaceState({},'',url);
   }
   function render() {
     const query = N.normalizeBib($('#search').value);
-    const all = (payload?.leaderboard || []).filter(row => row.categoryCode === group);
+    const all = (payload?.leaderboard || []).filter(row => group === 'all' || row.categoryCode === group);
     const rows = all.filter(row => N.normalizeBib([row.bibNumber,row.athleteName,...(row.memberNames||[])].join(' ')).includes(query));
-    $('#count').textContent = `${N.groups[group].label} · ${all.length} ${N.groups[group].size === 1 ? '人' : '队'}${query ? ` · 找到 ${rows.length} 条` : ''}`;
+    const groupLabel = group === 'all' ? '全部组别' : N.groups[group].label;
+    $('#count').textContent = `${groupLabel} · ${all.length} 个参赛单位${query ? ` · 找到 ${rows.length} 条` : ''}`;
     $('#entries').innerHTML = rows.length ? rows.map(row => {
       const e = N.escape, rank = row.categoryRank ?? row.rank ?? '—';
       const stationCount = payload.race.stationCount;
@@ -88,7 +89,7 @@
   }
   $('#entries').addEventListener('toggle',event=>{ const entry=event.target; if(!entry.isConnected || !entry.matches('details'))return; if(entry.open)openEntries.add(entry.dataset.bib);else openEntries.delete(entry.dataset.bib); },true);
   $('#groups').addEventListener('click',event=>{const button=event.target.closest('[data-group]');if(!button)return;group=button.dataset.group;controls();render();});
-  document.querySelectorAll('[data-day]').forEach(button=>button.addEventListener('click',()=>{if(day===button.dataset.day)return;version++;controller?.abort();loading=false;payload=null;openEntries.clear();day=button.dataset.day;group=N.codes(day)[0];controls();render();refresh();}));
+  document.querySelectorAll('[data-day]').forEach(button=>button.addEventListener('click',()=>{if(day===button.dataset.day)return;version++;controller?.abort();loading=false;payload=null;openEntries.clear();day=button.dataset.day;group='all';controls();render();refresh();}));
   $('#search').addEventListener('input',render);
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refresh();});
   controls(); render(); refresh(); setInterval(()=>{if(document.visibilityState==='visible')refresh();},5000);

@@ -86,20 +86,20 @@
     const N = Nanxi, $ = selector=>document.querySelector(selector), params = new URLSearchParams(location.search);
     const demo = params.get('demo') === '1';
     let day = params.get('day') === '20' || params.get('raceId') === N.races[20] ? '20' : '19';
-    let group = N.codes(day).includes(params.get('group')) ? params.get('group') : N.codes(day)[0];
+    let group = params.get('group') === 'all' || N.codes(day).includes(params.get('group')) ? (params.get('group') || 'all') : 'all';
     let payload = null, version = 0, loading = false, controller = null;
     const labels = {finished:'已完赛',racing:'比赛中',not_started:'未开始',paused:'暂停',dnf:'退赛',dns:'未出发'};
     document.querySelector('.day-switch').hidden = !demo;
     if (!demo) document.querySelector('.day-switch').style.display = 'none';
     function controls() {
-      $('#title').textContent = N.groups[group].label;
-      $('#groups').innerHTML = N.codes(day).map(code=>`<button class="${code===group?'active':''}" aria-pressed="${code===group}" data-group="${code}">${N.groups[code].label}</button>`).join('');
+      $('#title').textContent = group === 'all' ? '全部组别' : N.groups[group].label;
+      $('#groups').innerHTML = [`<button class="${group==='all'?'active':''}" aria-pressed="${group==='all'}" data-group="all">全部组别</button>`, ...N.codes(day).map(code=>`<button class="${code===group?'active':''}" aria-pressed="${code===group}" data-group="${code}">${N.groups[code].label}</button>`)].join('');
       document.querySelectorAll('[data-day]').forEach(button=>button.classList.toggle('active',button.dataset.day===day));
-      $('#nameHeading').textContent = N.groups[group].size===1?'NAME':'TEAM / MEMBERS';
+      $('#nameHeading').textContent = group === 'all' ? 'NAME / TEAM' : N.groups[group].size===1?'NAME':'TEAM / MEMBERS';
     }
     function render() {
-      const entries = (payload?.leaderboard || []).filter(row=>row.categoryCode === group);
-      $('#mockCount').textContent = `${demo?'演示成绩 · ':''}${entries.length} ${N.groups[group].size===1?'位选手':'支队伍'}`;
+      const entries = (payload?.leaderboard || []).filter(row=>group === 'all' || row.categoryCode === group);
+      $('#mockCount').textContent = `${demo?'演示成绩 · ':''}${entries.length} 个参赛单位`;
       $('#rows').innerHTML = entries.length ? entries.map(row=>`<div class="row">
         <span class="rank">${row.categoryRank ?? row.rank ?? '—'}</span>
         <span class="name">${N.escape(row.athleteName)}${row.entryType==='individual'?'':`<small class="members">${(row.memberNames||[]).map(N.escape).join(' / ')}</small>`}</span>
@@ -117,7 +117,7 @@
       finally {clearTimeout(timeout);if(current===version)loading=false;}
     }
     $('#groups').addEventListener('click',event=>{const button=event.target.closest('[data-group]');if(!button)return;group=button.dataset.group;controls();render();});
-    document.querySelectorAll('[data-day]').forEach(button=>button.addEventListener('click',()=>{version++;controller?.abort();loading=false;payload=null;day=button.dataset.day;group=N.codes(day)[0];controls();render();refresh();}));
+      document.querySelectorAll('[data-day]').forEach(button=>button.addEventListener('click',()=>{version++;controller?.abort();loading=false;payload=null;day=button.dataset.day;group='all';controls();render();refresh();}));
     controls();render();refresh();setInterval(()=>{if(document.visibilityState==='visible')refresh();},3000);
     setInterval(()=>$('#clock').textContent=new Date().toLocaleTimeString('zh-CN',{hour12:false}),1000);
   </script>
