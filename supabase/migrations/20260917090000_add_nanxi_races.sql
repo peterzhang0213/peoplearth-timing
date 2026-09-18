@@ -3,6 +3,10 @@ alter table public.participants
   add column if not exists category_code text,
   add column if not exists female_count integer;
 
+-- Existing races may already contain bindings from the pre-Nanxi API (including
+-- a legacy A-000 test entry). Defer checking those rows until the follow-up
+-- category/member-bib migration backfills metadata and validates the relaxed
+-- explicit-category rules. New writes still have to satisfy this constraint.
 alter table public.participants add constraint participants_nanxi_entry_check check (
   race_id not in ('nanxi-race-20260919', 'nanxi-race-20260920') or (
     bib_number is not null and category_code is not null and female_count is not null
@@ -16,7 +20,7 @@ alter table public.participants add constraint participants_nanxi_entry_check ch
     and female_count between 0 and jsonb_array_length(member_names)
     and (category_code in ('F','G') or female_count = case category_code when 'A' then 0 when 'B' then 1 when 'C' then 0 when 'D' then 2 when 'E' then 1 end)
   )
-);
+) not valid;
 
 -- The original cloud schema capped station numbers at 8. Nanxi uses nine
 -- stations, and the admin UI allows future profiles up to twenty.

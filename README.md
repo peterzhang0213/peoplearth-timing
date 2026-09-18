@@ -66,9 +66,11 @@ http://localhost:8787/leaderboard.html
 
 The Nanxi mobile ranking is `http://localhost:8787/nanxi.html`, the venue screen is
 `http://localhost:8787/nanxi-leaderboard-preview.html`, and the finish photo card is
-`http://localhost:8787/finish-result.html`. Nanxi uses fixed bib numbers: September
-19 uses `A-001` through `E-001` (men/women singles, men/women/mixed doubles), while
-September 20 uses `F-001` and `G-001` (two-person and four-person relay). The public
+`http://localhost:8787/finish-result.html`. Nanxi chooses divisions explicitly:
+September 19 uses A–E (men/women singles, men/women/mixed doubles), while
+September 20 is configured for F/G (two-person and four-person relay).
+Bib numbers need not match the division prefix. Legacy `A-001`–`G-999` numbers
+remain readable when the stored category is missing. The public
 pages default to live results; append `?demo=1` only when a mock screen is needed.
 Bind real events explicitly with `?demo=0&race19=EVENT_ID_19&race20=EVENT_ID_20`;
 these are backend event IDs, while the lookup input matches the entry's `bibNumber`.
@@ -89,12 +91,27 @@ audited timing decisions. The first phone checkpoint (`START`) only confirms tha
 participant is ready; the judge freely selects ready entries and starts them with the
 shared confirmation-click time.
 For Nanxi, the judge page links each station account directly to its NFC checkpoint.
+The NFC link opens a separate top-level tab: Web NFC cannot scan from an iframe,
+even on an NFC-capable Android phone. Use Android Chrome over HTTPS. Other phones
+can use the judge page for manual confirmation. Both NFC start check-in and
+"人工核验待发" only enter the ready queue; only the judge's gun-start action starts
+the clock. Every one of the eight station finishes must still be confirmed in order,
+using either NFC or manual input; an unconfirmed station cannot simply be skipped.
+Only NFC stations need a reader binding. Device bindings are separate for September
+19 and 20; stop scanning before switching race dates. To change stations within a
+race, first unbind the reader with the administrator password.
 Manual confirmation and NFC taps use the same participant/station lock: whichever
 arrives first is accepted, and the other path is rejected as a duplicate or wrong
 progress. The Nanxi binding panel also accepts a CSV with
-`bibNumber,athleteName,member1,member2,member3,member4,cardCode,femaleCount`; this is
-the fastest way to bind a large roster, while the fixed bib number still determines
-the event type and member count.
+`categoryCode,bibNumber,athleteName,member1,member1Bib,member2,member2Bib,member3,member3Bib,member4,member4Bib,cardCode,femaleCount`.
+The selected category determines the event type and member count.
+Nanxi registration now chooses the group explicitly. A doubles or four-person entry
+stores one timed entry and one shared wristband, while each member has an independent
+member bib number. The team query number is optional; any member bib can find the
+same team in the mobile ranking or finish card.
+On September 19, doubles may omit the team name: the display name defaults to
+both member names joined with ` / `. September 20 relay entries require a team name.
+
 The leaderboard selector is intentionally limited to the Shanghai, Hangzhou, and Final
 HOKA stages plus one Supabase-backed test dataset.
 

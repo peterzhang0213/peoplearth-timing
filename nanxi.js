@@ -14,7 +14,24 @@
   const isRace = id => Object.values(races).includes(id);
   const dayForRace = id => id === races[20] ? "20" : "19";
   const normalizeBib = value => String(value || "").normalize("NFKC").trim().toUpperCase().replace(/[‐‑–—−]/g, "-").replace(/\s+/g, "");
+  const categoryForRow = row => {
+    const explicit = String(row?.categoryCode || row?.category_code || "").trim().toUpperCase();
+    if (groups[explicit]) return explicit;
+    const legacyBib = normalizeBib(row?.bibNumber || row?.bib_number);
+    const inferred = legacyBib.match(/^([A-G])-\d{3}$/)?.[1];
+    return inferred && groups[inferred] ? inferred : null;
+  };
+  const matchesBib = (row, value) => {
+    const bib = normalizeBib(value);
+    const memberBibs = row?.memberBibNumbers || row?.member_bib_numbers;
+    return Boolean(bib) && (normalizeBib(row?.bibNumber || row?.bib_number) === bib
+      || (Array.isArray(memberBibs) && memberBibs.some(item => normalizeBib(item) === bib)));
+  };
   const escape = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[c]));
+  const memberCaption = row => {
+    const members = (row.memberNames || []).join(" / ");
+    return row.entryType === "individual" || row.athleteName === members ? "" : members;
+  };
   function duration(ms) {
     if (ms === null || ms === undefined || !Number.isFinite(Number(ms))) return "--:--:--";
     const total = Math.max(0, Math.floor(Number(ms) / 1000));
@@ -36,7 +53,8 @@
       let at = Date.parse(startTime);
       const checkpointTimes = {START: new Date(at).toISOString()};
       Object.values(stationSplits).forEach((ms, j) => { at += ms; checkpointTimes[checkpoints[j + 1]] = new Date(at).toISOString(); });
-      return {participantId: bibNumber, bibNumber, categoryCode: code, categoryLabel: group.label,
+      const memberBibNumbers = Array.from({length: group.size}, (_, m) => `${code}-${String(i * group.size + m + 1).padStart(3, "0")}`);
+      return {participantId: bibNumber, bibNumber, memberBibNumbers, categoryCode: code, categoryLabel: group.label,
         athleteName: group.size === 1 ? members[0] : ["North Pace", "追风小队", "Nanxi 力量", "一起向前"][i % 4] + ` ${i + 1}`,
         entryType: group.type, memberNames: members, memberCount: group.size, femaleCount,
         startTime, finishTime: new Date(at).toISOString(), rawElapsedMs, baseElapsedMs: rawElapsedMs,
@@ -52,11 +70,15 @@
     return {ok: true, raceId: races[day], race: {raceId: races[day], brand: "nanxi", name: `Nanxi · 9 月 ${day} 日`, stationCount: 8, mode: "station_checkpoints", checkpointLayout: "station_boundaries", checkpoints, status: "active", categories: codes(day).map(code => ({code, label: groups[code].label}))}, generatedAt: new Date().toISOString(), leaderboard};
   }
   async function fetchResults(day, signal) {
-    const response = await window.timingApiFetch(`/api/leaderboard?raceId=${races[day]}`, {signal});
-    const payload = await response.json();
-    if (!response.ok || !payload.ok || !Array.isArray(payload.leaderboard)) throw new Error(payload.error || "成绩服务暂时不可用");
+    const response = await window.timingApiFetch(`/api/leaderboard?raceId=${races[day]}`, {signal, cache: "no-store"});
+    if (!response.ok) throw new Error(`成绩服务返回 HTTP ${response.status}`);
+    let payload;
+    try { payload = await response.json(); }
+    catch (error) { if (signal?.aborted) throw error; throw new Error("成绩服务返回的数据格式异常"); }
+    if (!payload.ok || !Array.isArray(payload.leaderboard) || !payload.race) throw new Error("成绩服务返回的数据不完整");
     if (payload.raceId !== races[day]) throw new Error("返回的赛事与所选日期不一致");
     return payload;
   }
-  window.Nanxi = {races, groups, codes, isRace, dayForRace, normalizeBib, escape, duration, mock, fetchResults};
+  const resultError = error => error?.name === "AbortError" ? "成绩请求超时" : error instanceof TypeError ? "无法连接成绩服务，请检查网络" : error?.message || "成绩服务暂时不可用";
+  window.Nanxi = {races, groups, codes, isRace, dayForRace, normalizeBib, categoryForRow, matchesBib, memberCaption, escape, duration, mock, fetchResults, resultError};
 })();

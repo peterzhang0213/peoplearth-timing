@@ -381,10 +381,11 @@ function normalizeParticipantEntry(payload: JsonObject): {
     }
     displayName = memberNames[0];
   } else if (entryType === "doubles") {
-    if (!displayName) throw new Error("doubles entries require a team name");
     if (memberNames.length !== 2) {
       throw new Error("doubles entries require exactly two member names");
     }
+    if (!displayName && payload.raceId === "nanxi-race-20260919") displayName = memberNames.join(" / ");
+    if (!displayName) throw new Error("doubles entries require a team name");
   } else {
     if (!displayName) throw new Error("team entries require a team name");
     if (memberNames.length < 2 || memberNames.length > 12) {
@@ -651,6 +652,8 @@ function buildStartQueue(
       startBatch: participant.start_batch ?? null,
       entryType: participant.entry_type || "individual",
       memberNames: Array.isArray(participant.member_names) ? participant.member_names : [],
+      memberBibNumbers: participant.member_bib_numbers || [],
+      categoryCode: participant.category_code || null,
       cardCode: participant.card_code,
       checkInStatus: participant.check_in_status || "not_checked_in",
       status,
@@ -1033,6 +1036,7 @@ function buildLeaderboard(
         participant.member_names,
         String(participant.athlete_name || ""),
       ),
+      memberBibNumbers: participant.member_bib_numbers || [],
       memberCount: normalizeMemberNames(
         participant.member_names,
         String(participant.athlete_name || ""),
@@ -1508,6 +1512,8 @@ async function handlePost(route: string, request: Request): Promise<Response> {
       athleteName: participant.athlete_name,
       entryType: participant.entry_type || "individual",
       memberNames: Array.isArray(participant.member_names) ? participant.member_names : [],
+      memberBibNumbers: participant.member_bib_numbers || [],
+      categoryCode: participant.category_code || null,
       confirmedAt: rows[0].confirmed_at,
       receivedAt: now,
       storage: { localSaved: false, supabaseSaved: true, primary: storageProviderName() },
@@ -1890,7 +1896,6 @@ async function handlePost(route: string, request: Request): Promise<Response> {
     const confirmation = String(payload.confirmation || "").trim();
     const suppliedCode = String(payload.adminCode || "");
     const entry = normalizeParticipantEntry(payload);
-    const nanxiEntry = nanxiRegistration(payload, entry);
     const bibNumber = normalizeBibNumber(payload.bibNumber, raceId, entry.entryType);
     const startBatchProvided = payload.startBatch !== undefined;
     const startBatch = optionalStartBatch(payload.startBatch);
@@ -1938,7 +1943,7 @@ async function handlePost(route: string, request: Request): Promise<Response> {
     const [existingRows, conflictingBibRows] = await Promise.all([
       databaseRequest("participants", {
       query: {
-        select: "id,start_order",
+        select: "id,start_order,category_code,member_bib_numbers",
         race_id: `eq.${raceId}`,
         id: `eq.${participantId}`,
         limit: "1",
@@ -1957,6 +1962,11 @@ async function handlePost(route: string, request: Request): Promise<Response> {
     if (!existingRows[0]) {
       return jsonResponse({ ok: false, error: "Participant was not found in this race" }, 404);
     }
+    const nanxiEntry = nanxiRegistration({
+      ...payload,
+      categoryCode: payload.categoryCode ?? existingRows[0].category_code,
+      memberBibNumbers: payload.memberBibNumbers ?? existingRows[0].member_bib_numbers ?? [],
+    }, entry);
     if (conflictingBibRows[0]) {
       return jsonResponse({ ok: false, error: "bibNumber is already assigned in this race" }, 409);
     }

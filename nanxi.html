@@ -40,9 +40,28 @@
   <div class="meta"><span id="count"></span><span id="connection" role="status">正在读取成绩…</span></div>
   <section id="entries" aria-label="组别排名"></section>
 </main>
-<script src="./timing-api.js"></script><script src="./nanxi.js"></script>
 <script>
-  const N = window.Nanxi, $ = selector => document.querySelector(selector);
+(() => {
+  const startedAt = Date.now();
+  const showDependencyError = () => {
+    if (window.Nanxi && window.timingApiFetch) return;
+    const status = document.querySelector('#connection, #message');
+    if (status) { status.textContent = '成绩脚本未加载成功，请刷新页面或检查网络连接。'; status.classList.add('error'); }
+    const output = document.querySelector('#rows, #entries');
+    if (output && !output.textContent.trim()) output.textContent = '暂时无法读取成绩';
+  };
+  const timer = setInterval(() => {
+    if (window.Nanxi && window.timingApiFetch) clearInterval(timer);
+    else if (Date.now() - startedAt > 12000) { clearInterval(timer); showDependencyError(); }
+  }, 250);
+  window.addEventListener('error', event => { if (event.target?.tagName === 'SCRIPT') showDependencyError(); }, true);
+})();
+</script>
+<script src="./timing-api.js?v=20260919-2" defer></script><script src="./nanxi.js?v=20260919-3" defer></script>
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    if (!window.Nanxi || !window.timingApiFetch) return;
+    const N = window.Nanxi, $ = selector => document.querySelector(selector);
   const params = new URLSearchParams(location.search), demo = params.get('demo') === '1';
   let day = N.isRace(params.get('raceId')) ? N.dayForRace(params.get('raceId')) : params.get('day') === '20' ? '20' : '19';
   let group = params.get('group') === 'all' || N.codes(day).includes(params.get('group')) ? (params.get('group') || 'all') : 'all';
@@ -59,15 +78,15 @@
   }
   function render() {
     const query = N.normalizeBib($('#search').value);
-    const all = (payload?.leaderboard || []).filter(row => group === 'all' || row.categoryCode === group);
-    const rows = all.filter(row => N.normalizeBib([row.bibNumber,row.athleteName,...(row.memberNames||[])].join(' ')).includes(query));
+    const all = (payload?.leaderboard || []).filter(row => group === 'all' || N.categoryForRow(row) === group);
+    const rows = all.filter(row => !query || N.matchesBib(row, query) || N.normalizeBib([row.athleteName,...(row.memberNames||[])].join(' ')).includes(query));
     const groupLabel = group === 'all' ? '全部组别' : N.groups[group].label;
     $('#count').textContent = `${groupLabel} · ${all.length} 个参赛单位${query ? ` · 找到 ${rows.length} 条` : ''}`;
     $('#entries').innerHTML = rows.length ? rows.map(row => {
-      const e = N.escape, rank = row.categoryRank ?? row.rank ?? '—';
+      const e = N.escape, rank = row.status === 'finished' ? row.categoryRank ?? row.rank ?? '—' : '—';
       const stationCount = payload.race.stationCount;
       return `<details class="entry" data-bib="${e(row.bibNumber)}" ${openEntries.has(row.bibNumber)?'open':''}><summary>
-        <span class="rank">${rank}</span><div><div class="name">${e(row.athleteName)}</div>${row.entryType==='individual'?'':`<div class="members">${(row.memberNames||[]).map(e).join(' / ')}</div>`}<span class="bib">${e(row.bibNumber)}</span></div>
+        <span class="rank">${rank}</span><div><div class="name">${e(row.athleteName)}</div>${N.memberCaption(row)?`<div class="members">${e(N.memberCaption(row))}</div>`:''}<span class="bib">${e(row.bibNumber)}</span></div>
         <div class="total"><div class="time">${N.duration(row.elapsedMs)}</div><div class="status">${statusLabels[row.status] || '待确认'}</div><div class="expand">站点详情 ⌄</div></div></summary>
         <div class="detail"><div class="adjustments"><span>原始用时 ${N.duration(row.baseElapsedMs)}</span><span>罚时 +${N.duration(row.penaltyMs || 0)}</span>${day==='20'?`<span>接力减时 −${N.duration(row.deductionMs || 0)}</span>`:''}${Number(row.adjustmentMs||0)<Number(row.penaltyMs||0)?`<span>其他调整 −${N.duration((row.penaltyMs||0)-(row.adjustmentMs||0))}</span>`:''}</div>
         <div class="splits">${Array.from({length:stationCount},(_,i)=>`<div class="split"><b>S${i+1}</b><span>${N.duration(row.stationSplits?.[`station${i+1}Ms`])}</span></div>`).join('')}</div>
@@ -76,14 +95,14 @@
   }
   async function refresh() {
     if (loading) return; loading = true; const current = version;
-    controller = new AbortController(); const timeout = setTimeout(()=>controller.abort(),10000);
+    const requestController = new AbortController(); controller = requestController; const timeout = setTimeout(()=>requestController.abort(),10000);
     try {
       const next = demo ? N.mock(day) : await N.fetchResults(day,controller.signal);
       if (current !== version) return;
       payload = next; $('#connection').className = ''; $('#connection').textContent = `${demo?'演示':'已更新'} ${new Date(payload.generatedAt).toLocaleTimeString('zh-CN',{hour12:false})}`; render();
     } catch (error) {
       if (current !== version) return;
-      $('#connection').className = 'error'; $('#connection').textContent = payload ? '连接中断 · 保留上次成绩，正在重试' : '暂时无法连接成绩服务，正在重试';
+      $('#connection').className = 'error'; $('#connection').textContent = `${N.resultError(error)} · ${payload?'保留上次成绩，':''}正在重试`;
       if (!payload) $('#entries').innerHTML = '<div class="empty">暂时无法读取成绩</div>';
     } finally { clearTimeout(timeout); if (current === version) loading = false; }
   }
@@ -93,4 +112,5 @@
   $('#search').addEventListener('input',render);
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refresh();});
   controls(); render(); refresh(); setInterval(()=>{if(document.visibilityState==='visible')refresh();},5000);
+  });
 </script></body></html>

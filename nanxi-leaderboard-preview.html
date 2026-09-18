@@ -92,7 +92,7 @@
     <div class="topbar"><span class="live">LIVE RANKING</span><span class="clock" id="clock"></span></div>
     <div class="brand"><img src="./assets/nanxi-main-visual-cropped.svg" alt="Nanxi主视觉"></div>
     <section class="heading">
-      <div><h1 id="title">男子单人</h1></div>
+      <div><h1 id="title">全部组别</h1></div>
       <div class="day-switch"><button class="active" data-day="19">9 月 19 日</button><button data-day="20">9 月 20 日</button></div>
     </section>
     <div class="group-switch" id="groups"></div>
@@ -100,10 +100,34 @@
       <div class="board-head"><span>RANK</span><span id="nameHeading">NAME</span><span>选手号</span><span id="timeHeading">TIME</span><span>STATUS</span></div>
       <div id="rows"></div>
     </section>
-    <div class="footer"><span id="mockCount">Mock · 20 位选手</span><button id="scrollToggle" class="scroll-control" aria-pressed="true">暂停滚动</button><span id="connection" role="status">正在读取成绩…</span></div>
+    <div class="footer"><span id="mockCount">等待成绩</span><button id="scrollToggle" class="scroll-control" aria-pressed="true">暂停滚动</button><span id="connection" role="status">正在读取成绩…</span></div>
   </main>
-  <script src="./timing-api.js"></script><script src="./nanxi.js"></script>
   <script>
+    (() => {
+      const startedAt = Date.now();
+      const showDependencyError = () => {
+        if (window.Nanxi && window.timingApiFetch) return;
+        const status = document.querySelector('#connection, #message');
+        if (status) {
+          status.textContent = '成绩脚本未加载成功，请刷新页面或检查网络连接。';
+          status.classList.add('error');
+        }
+        const output = document.querySelector('#rows, #entries');
+        if (output && !output.textContent.trim()) output.textContent = '暂时无法读取成绩';
+      };
+      const timer = setInterval(() => {
+        if (window.Nanxi && window.timingApiFetch) clearInterval(timer);
+        else if (Date.now() - startedAt > 12000) { clearInterval(timer); showDependencyError(); }
+      }, 250);
+      window.addEventListener('error', event => {
+        if (event.target?.tagName === 'SCRIPT') showDependencyError();
+      }, true);
+    })();
+  </script>
+  <script src="./timing-api.js?v=20260919-2" defer></script><script src="./nanxi.js?v=20260919-3" defer></script>
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      if (!window.Nanxi || !window.timingApiFetch) return;
     const N = Nanxi, $ = selector=>document.querySelector(selector), params = new URLSearchParams(location.search);
     const demo = params.get('demo') === '1';
     let day = params.get('day') === '20' || params.get('raceId') === N.races[20] ? '20' : '19';
@@ -153,12 +177,12 @@
       $('#nameHeading').textContent = group === 'all' ? 'NAME / TEAM' : N.groups[group].size===1?'NAME':'TEAM / MEMBERS';
     }
     function render() {
-      const entries = (payload?.leaderboard || []).filter(row=>group === 'all' || row.categoryCode === group);
+      const entries = (payload?.leaderboard || []).filter(row=>group === 'all' || N.categoryForRow(row) === group);
       $('#mockCount').textContent = `${demo?'演示成绩 · ':''}${entries.length} 个参赛单位`;
       const previousTop = scroller.scrollTop;
       const markup = entries.length ? entries.map(row=>`<div class="row">
-        <span class="rank">${row.categoryRank ?? row.rank ?? '—'}</span>
-        <span class="name">${N.escape(row.athleteName)}${row.entryType==='individual'?'':`<small class="members">${(row.memberNames||[]).map(N.escape).join(' / ')}</small>`}</span>
+        <span class="rank">${row.status==='finished' ? row.categoryRank ?? row.rank ?? '—' : '—'}</span>
+        <span class="name">${N.escape(row.athleteName)}${N.memberCaption(row)?`<small class="members">${N.escape(N.memberCaption(row))}</small>`:''}</span>
         <span class="id">${N.escape(row.bibNumber)}</span>
         <span class="time">${N.duration(row.elapsedMs)}<small class="penalty">罚时 +${N.duration(row.penaltyMs || 0)}</small>${day==='20'?`<small class="deduction">减时 −${N.duration(row.deductionMs || 0)}</small>`:''}</span>
         <span class="status">${labels[row.status]||'待确认'}</span>
@@ -171,15 +195,16 @@
     }
     async function refresh() {
       if (loading) return; loading=true; const current=version;
-      controller=new AbortController(); const timeout=setTimeout(()=>controller.abort(),10000);
+      const requestController=new AbortController(); controller=requestController; const timeout=setTimeout(()=>requestController.abort(),10000);
       try { const next=demo?N.mock(day):await N.fetchResults(day,controller.signal);if(current!==version)return;payload=next;render();$('#connection').textContent=`${demo?'演示':'已更新'} ${new Date(next.generatedAt).toLocaleTimeString('zh-CN',{hour12:false})}`; }
-      catch(error) {if(current===version) {$('#connection').textContent=payload?'连接中断 · 保留上次成绩，正在重试':'无法连接成绩服务，正在重试';if(!payload)$('#rows').textContent='暂时无法读取成绩';}}
+      catch(error) {if(current===version) {$('#connection').textContent=`${N.resultError(error)} · ${payload?'保留上次成绩，':''}正在重试`;if(!payload)$('#rows').textContent='暂时无法读取成绩';}}
       finally {clearTimeout(timeout);if(current===version)loading=false;}
     }
     $('#groups').addEventListener('click',event=>{const button=event.target.closest('[data-group]');if(!button)return;group=button.dataset.group;controls();render();resetScroll();});
       document.querySelectorAll('[data-day]').forEach(button=>button.addEventListener('click',()=>{version++;controller?.abort();loading=false;payload=null;day=button.dataset.day;group='all';controls();render();resetScroll();refresh();}));
     controls();render();refresh();setInterval(()=>{if(document.visibilityState==='visible')refresh();},3000);
     setInterval(()=>$('#clock').textContent=new Date().toLocaleTimeString('zh-CN',{hour12:false}),1000);
+    });
   </script>
 </body>
 </html>

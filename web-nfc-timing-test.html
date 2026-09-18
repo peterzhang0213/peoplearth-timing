@@ -711,6 +711,11 @@
     </div>
 
     <div id="status" class="status" data-tone="info">等待启动。</div>
+    <div id="nfcContextHelp" class="status" data-tone="warning" hidden>
+      NFC 扫描需要在安卓 Chrome 的独立 HTTPS 页面打开。
+      <a id="standaloneLink" target="_blank" rel="noopener">在独立页面打开 NFC ↗</a>
+    </div>
+    <p class="settings-note"><a id="manualJudgeLink" target="_blank" rel="noopener" href="./judge.html">打开裁判台手动打卡 ↗</a> · 同一站 NFC 或手动确认一次即可。起点核验后等待统一发枪。</p>
 
     <details id="settingsPanel">
       <summary>设备设置</summary>
@@ -903,6 +908,31 @@
     let raceProfile = null;
     let deviceBindings = [];
     let bindingConfirmed = false;
+    let configurationLoading = true;
+    let bindingBusy = false;
+    let startingScan = false;
+    let initialCheckpoint = new URLSearchParams(location.search).get("checkpoint")
+      || new URLSearchParams(location.search).get("stationId");
+
+    function nfcUnavailableReason() {
+      if (window.self !== window.top) return "当前页面被嵌入，无法扫描 NFC。请点击“在独立页面打开 NFC”，使用安卓 Chrome 打开。";
+      if (!window.isSecureContext) return "NFC 需要 HTTPS 安全页面，请使用正式 HTTPS 地址打开。";
+      if (!("NDEFReader" in window)) return "当前浏览器不支持 Web NFC，请使用安卓 Chrome；iPhone 或不支持 NFC 的手机可在裁判台手动打卡。";
+      return "";
+    }
+
+    function updateNavigation() {
+      const params = new URLSearchParams({ raceId: elements.raceId.value.trim() });
+      document.querySelector("#manualJudgeLink").href = `./judge.html?${params}`;
+      const url = new URL(location.href);
+      url.searchParams.delete("embedded");
+      url.searchParams.set("raceId", elements.raceId.value.trim());
+      url.searchParams.set("timingMode", elements.timingMode.value);
+      url.searchParams.set("checkpoint", elements.stationId.value);
+      url.searchParams.set("role", elements.gateRole.value);
+      document.querySelector("#standaloneLink").href = url.href;
+      document.querySelector("#nfcContextHelp").hidden = window.self === window.top;
+    }
 
     function roleLabel(role) {
       return {
@@ -1063,7 +1093,7 @@
       const layout = race.mode === "three_reader_auto"
         ? `${race.stationCount} 站 / 3 手机`
         : race.mode === "station_checkpoints"
-          ? `${race.stationCount} 站 / ${race.stationCount + (usesStationBoundaries ? 1 : 2)} 手机`
+          ? `${race.stationCount} 站${usesStationBoundaries ? " + 起点待发" : ""} / NFC 或手动`
           : `${race.stationCount} 站 / 2 手机`;
       return `${race.name || race.raceId} · ${layout}`;
     }
@@ -1140,6 +1170,7 @@
         raceConfigUrl() + "?raceId=" + encodeURIComponent(raceId)
       );
       const payload = await readApiResponse(response);
+      if (raceId !== elements.raceId.value.trim()) return;
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || ("HTTP " + response.status));
       }
@@ -1159,8 +1190,9 @@
       }
       renderRaceCheckpoints(
         raceProfile.checkpoints,
-        params.get("checkpoint") || params.get("stationId") || elements.stationId.value
+        initialCheckpoint || elements.stationId.value
       );
+      initialCheckpoint = null;
       await loadDeviceBindings();
       elements.raceProfileStatus.textContent =
         raceProfile.name + " · " + raceProfile.mode
@@ -1220,21 +1252,25 @@
     function renderDeviceBindingAvailability() {
       const deviceId = elements.deviceId.value.trim();
       const ownBinding = currentDeviceBinding();
-      const scanning = document.body.classList.contains("scanning");
+      const scanning = document.body.classList.contains("scanning") || startingScan;
+      const busy = scanning || configurationLoading || bindingBusy;
       const selectedBinding = deviceBindings.find((binding) => binding.assignment === bindingAssignment());
       const selectedOccupied = Boolean(selectedBinding && selectedBinding.device_id !== deviceId);
 
       elements.deviceId.readOnly = true;
       elements.deviceId.disabled = scanning;
-      elements.raceId.disabled = scanning || Boolean(ownBinding);
-      elements.timingMode.disabled = scanning || Boolean(ownBinding);
+      elements.raceId.disabled = busy;
+      elements.timingMode.disabled = busy || Boolean(ownBinding);
       decorateAssignmentOptions(elements.gateRole, ownBinding);
       decorateAssignmentOptions(elements.stationId, ownBinding);
-      elements.bindDeviceButton.disabled = scanning || (!ownBinding && (!deviceId || selectedOccupied));
+      elements.stationId.disabled = busy || Boolean(ownBinding) || elements.timingMode.value === "auto";
+      elements.gateRole.disabled = busy || Boolean(ownBinding) || elements.timingMode.value !== "auto";
+      elements.bindDeviceButton.disabled = busy || !raceProfile || (!ownBinding && (!deviceId || selectedOccupied));
+      elements.startButton.disabled = busy;
       elements.bindDeviceButton.classList.toggle("danger", Boolean(ownBinding));
 
       if (ownBinding) {
-        elements.deviceBindingStatus.textContent = `本机已占用：${assignmentLabel(ownBinding.assignment)}。比赛结束或主动解绑前会一直保留。`;
+        elements.deviceBindingStatus.textContent = `本机已绑定：${assignmentLabel(ownBinding.assignment)}。换站需先解绑；停止扫描后可切换比赛日期，绑定按比赛独立保存。`;
         elements.deviceBindingStatus.dataset.tone = "success";
         elements.bindDeviceButton.textContent = "解除本机绑定";
       } else if (selectedOccupied) {
@@ -1265,9 +1301,10 @@
       );
       const payload = await readApiResponse(response);
       if (!response.ok || !payload.ok) throw new Error(payload.error || ("HTTP " + response.status));
+      if (raceId !== elements.raceId.value.trim()) return;
       deviceBindings = Array.isArray(payload.bindings) ? payload.bindings : [];
       bindingConfirmed = Boolean(currentDeviceBinding());
-      applyCurrentDeviceBinding();
+      if (!startingScan && !document.body.classList.contains("scanning")) applyCurrentDeviceBinding();
       renderDeviceBindingAvailability();
     }
 
@@ -1284,6 +1321,7 @@
       if (!response.ok || !payload.ok) throw new Error(payload.error || ("HTTP " + response.status));
       await loadDeviceBindings();
       bindingConfirmed = true;
+      renderConfiguration();
       const assignmentLabel = elements.timingMode.value === "manual"
         ? checkpointLabel(assignment)
         : shortRoleLabel(assignment);
@@ -1342,14 +1380,24 @@
     }
 
     async function refreshRaceData({ reloadOptions = false } = {}) {
-      if (reloadOptions) {
-        try {
-          await loadRaceOptions();
-        } catch (error) {
-          // Keep the built-in official options available when the list request fails.
+      configurationLoading = true;
+      raceProfile = null;
+      deviceBindings = [];
+      bindingConfirmed = false;
+      renderDeviceBindingAvailability();
+      try {
+        if (reloadOptions) {
+          try {
+            await loadRaceOptions();
+          } catch (error) {
+            // Keep the built-in official options available when the list request fails.
+          }
         }
+        await loadRaceProfile();
+      } finally {
+        configurationLoading = false;
+        renderDeviceBindingAvailability();
       }
-      await loadRaceProfile();
     }
 
     function renderConfiguration() {
@@ -1364,6 +1412,7 @@
       elements.deviceMeta.textContent = `${elements.raceId.value.trim() || "No race"} · ${elements.deviceId.value.trim() || "No device"}`;
       elements.startButton.textContent = isStartCheckin ? "开始起点核验" : "开始扫描 NFC";
       elements.testVoiceButton.disabled = !elements.voiceEnabled.checked;
+      updateNavigation();
       if (!document.body.classList.contains("scanning")) renderReadyState();
       saveSettings();
       renderDeviceBindingAvailability();
@@ -1813,22 +1862,33 @@
     }
 
     elements.startButton.addEventListener("click", async () => {
-      if (!("NDEFReader" in window)) {
-        setStatus("当前浏览器不支持 Web NFC，请使用 Android Chrome 打开 HTTPS 页面。", "error");
-        announceVoice("当前浏览器不支持NFC，请使用安卓Chrome浏览器");
+      const unavailable = nfcUnavailableReason();
+      if (unavailable) {
+        setStatus(unavailable, "error");
+        updateNavigation();
         return;
       }
 
       try {
-        await loadRaceProfile();
+        if (configurationLoading || !raceProfile || raceProfile.raceId !== elements.raceId.value.trim()) throw new Error("比赛配置尚未就绪，请刷新后重试");
         validateConfiguration();
-        await ensureDeviceBinding();
+        if (!bindingConfirmed || currentDeviceBinding()?.assignment !== bindingAssignment()) {
+          elements.settingsPanel.open = true;
+          throw new Error("请先在设备设置中点击“绑定本机站点”");
+        }
+        startingScan = true;
+        renderDeviceBindingAvailability();
         saveSettings();
-        await unlockAudio();
-        await unlockSuccessVoice();
         abortController = new AbortController();
         ndefReader = new NDEFReader();
-        await ndefReader.scan({ signal: abortController.signal });
+        // Request permission directly in the click, before network/audio awaits
+        // can consume the browser's transient user activation.
+        const scanStarted = ndefReader.scan({ signal: abortController.signal });
+        // Audio is optional: a suspended audio context must not stall the reader.
+        unlockAudio().catch(() => {});
+        unlockSuccessVoice().catch(() => {});
+        await scanStarted;
+        await ensureDeviceBinding();
         ndefReader.addEventListener("reading", queueReading);
         ndefReader.addEventListener("readingerror", () => {
           setStatus("NFC 读取失败，请将卡片移开后重新贴卡。", "error");
@@ -1844,10 +1904,17 @@
         renderReadyState();
         setStatus(`扫描已启动 · ${elements.roleName.textContent}`, "success");
       } catch (error) {
+        abortController?.abort();
         abortController = null;
         ndefReader = null;
-        setStatus(`无法开始扫描：${error.message}`, "error");
+        const detail = error.name === "NotAllowedError"
+          ? "NFC 权限未允许，请在安卓 Chrome 的网站权限中允许 NFC，然后重试。"
+          : error.message;
+        setStatus(`无法开始扫描：${detail}`, "error");
         announceVoice("扫描启动失败，请检查网络和NFC设置后重试");
+      } finally {
+        startingScan = false;
+        renderDeviceBindingAvailability();
       }
     });
 
@@ -1892,12 +1959,21 @@
       }
     });
 
-    elements.bindDeviceButton.addEventListener("click", () => {
+    elements.bindDeviceButton.addEventListener("click", async () => {
       if (currentDeviceBinding()) {
         openUnbindModal();
         return;
       }
-      bindDevice().catch((error) => setStatus(`设备绑定失败：${error.message}`, "error"));
+      bindingBusy = true;
+      renderDeviceBindingAvailability();
+      try {
+        await bindDevice();
+      } catch (error) {
+        setStatus(`设备绑定失败：${error.message}`, "error");
+      } finally {
+        bindingBusy = false;
+        renderDeviceBindingAvailability();
+      }
     });
 
     elements.cancelUnbindButton.addEventListener("click", closeUnbindModal);
@@ -1960,7 +2036,7 @@
     renderConfiguration();
     refreshRaceData({ reloadOptions: true }).catch(showRaceProfileError);
     window.setInterval(() => {
-      if (document.visibilityState === "visible" && elements.raceId.value) {
+      if (document.visibilityState === "visible" && elements.raceId.value && !configurationLoading && !startingScan && !document.body.classList.contains("scanning")) {
         loadDeviceBindings().catch(() => {});
       }
     }, 10000);

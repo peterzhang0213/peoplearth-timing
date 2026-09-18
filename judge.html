@@ -172,20 +172,6 @@
       background: #243442;
       color: #ffffff;
     }
-    .nfc-panel {
-      display: grid;
-      gap: 10px;
-      margin-top: 10px;
-      border: 1px solid var(--line);
-      border-radius: 7px;
-      padding: 10px;
-      background: var(--surface);
-    }
-    .nfc-panel[hidden] { display: none; }
-    .nfc-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-    .nfc-panel-head strong { font-size: 15px; }
-    .nfc-panel-head span { color: var(--muted); font-size: 12px; font-weight: 700; }
-    .nfc-frame { width: 100%; min-height: 720px; border: 1px solid var(--line); border-radius: 6px; background: #0a0a08; }
     .role-copy { min-width: 0; }
     .role-kicker { color: rgb(255 255 255 / 65%); font-size: 11px; font-weight: 900; }
     .role-title { display: block; margin-top: 3px; font-size: 20px; line-height: 1.2; }
@@ -383,8 +369,6 @@
       .card-cell { display: none; }
       .start-button { min-width: 170px; }
       .message { align-items: flex-start; }
-      .nfc-panel-head { align-items: flex-start; flex-direction: column; }
-      .nfc-frame { min-height: 680px; }
     }
     @media (max-width: 390px) {
       .utility-button, .utility-link { padding-right: 7px; padding-left: 7px; }
@@ -395,7 +379,9 @@
       .start-confirm-modal .modal-actions { display: grid; grid-template-columns: 1fr; }
       .start-confirm-modal .modal-button { width: 100%; min-width: 0; }
     }
-    body.nanxi { --accent:#d1ba00; --primary:#e5cc00; --brand:#fff04f; }
+    body.nanxi { --accent:#d1ba00; --primary:#e5cc00; --brand:#fff04f; --brand-ink:#15202b; --accent-ink:#15202b; }
+    body.nanxi .race-name, body.nanxi .header-status { color:#354351; }
+    body.nanxi .team-code { color:#665900; }
     body.nanxi .brand-logo { width:160px; object-fit:contain; border-radius:3px; }
   </style>
 </head>
@@ -436,7 +422,7 @@
         <label>比赛场次<div class="responsive-select"><select id="raceId"><option value="">正在读取比赛...</option></select><button class="responsive-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"></button><div class="responsive-select-menu" role="listbox" hidden></div></div></label>
         <button id="refreshButton" class="utility-button" type="button">刷新</button>
         <a id="bindingLink" class="utility-link" href="./admin.html">账号管理</a>
-        <button id="nfcLink" class="utility-link" type="button">NFC 打卡</button>
+        <a id="nfcLink" class="utility-link" href="./web-nfc-timing-test.html" target="_blank" rel="noopener">NFC 打卡 / 设备绑定 ↗</a>
         <a id="demoLink" class="utility-link" href="./judge.html?demo=1">体验模式</a>
       </section>
 
@@ -448,14 +434,6 @@
         </div>
         <label>操作岗位<select id="roleSelect" aria-label="操作岗位"></select></label>
         <button id="switchAccountButton" class="utility-button switch-account-button" type="button">切换账号</button>
-      </section>
-
-      <section id="nfcPanel" class="nfc-panel" hidden aria-label="NFC 打卡">
-        <div class="nfc-panel-head">
-          <div><strong>NFC 打卡 / 设备绑定</strong><span id="nfcPanelScope">当前站点会自动带入</span></div>
-          <button id="nfcPanelClose" class="utility-button" type="button">收起</button>
-        </div>
-        <iframe id="nfcFrame" class="nfc-frame" title="NFC 打卡与设备绑定"></iframe>
       </section>
 
       <section class="queue" aria-label="比赛选手队列">
@@ -519,12 +497,12 @@
         </div>
       </div>
       <div id="manualFields" class="modal-grid" hidden>
-        <label>开始时间<input id="manualStartTime" type="datetime-local" step="1"></label>
-        <label>结束时间<input id="manualFinishTime" type="datetime-local" step="1"></label>
+        <label>开始时间<input id="manualStartTime" type="datetime-local" step="0.001"></label>
+        <label>结束时间<input id="manualFinishTime" type="datetime-local" step="0.001"></label>
       </div>
       <div id="checkpointFields" class="modal-fields" hidden>
         <label>确认站点<select id="manualCheckpoint"></select></label>
-        <label>站点确认时间<input id="manualCheckpointTime" type="datetime-local" step="1"></label>
+        <label>站点确认时间<input id="manualCheckpointTime" type="datetime-local" step="0.001"></label>
       </div>
       <label id="operationReasonField">备注<textarea id="operationReason" maxlength="500" required></textarea></label>
       <div id="operationError" class="modal-error"></div>
@@ -574,10 +552,6 @@
       messageAction: document.querySelector("#messageAction"),
       messageText: document.querySelector("#messageText"),
       nfcLink: document.querySelector("#nfcLink"),
-      nfcPanel: document.querySelector("#nfcPanel"),
-      nfcPanelClose: document.querySelector("#nfcPanelClose"),
-      nfcPanelScope: document.querySelector("#nfcPanelScope"),
-      nfcFrame: document.querySelector("#nfcFrame"),
       operationBackdrop: document.querySelector("#operationBackdrop"),
       operationDescription: document.querySelector("#operationDescription"),
       operationError: document.querySelector("#operationError"),
@@ -998,7 +972,7 @@
     function toDateTimeLocal(value) {
       const date = value ? new Date(value) : new Date();
       const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-      return local.toISOString().slice(0, 19);
+      return local.toISOString().slice(0, 23);
     }
 
     function resolvedStatus(entry) {
@@ -1028,7 +1002,7 @@
     function statusDetail(entry) {
       const status = resolvedStatus(entry);
       if (status === "ready") return `核验 ${formatClock(entry.confirmedAt)}`;
-      if (status === "not_ready") return "等待起点刷卡";
+      if (status === "not_ready") return "等待 NFC 或人工核验";
       if (entry.result?.elapsedMs !== null && entry.result?.elapsedMs !== undefined) {
         const checkpoint = entry.result.latestCheckpoint || "START";
         return `${formatDuration(entry.result.elapsedMs)} · ${checkpoint === "START" ? "起点" : checkpointLabel(checkpoint)}`;
@@ -1039,7 +1013,7 @@
     function visibleEntries() {
       const query = elements.searchInput.value.trim().toLowerCase();
       return entries.filter((entry) => {
-        const categoryCode = entry.categoryCode || String(entry.bibNumber || "").charAt(0).toUpperCase();
+        const categoryCode = Nanxi.categoryForRow(entry) || String(entry.bibNumber || "").charAt(0).toUpperCase();
         if (Nanxi.isRace(elements.raceId.value) && activeCategory !== "all" && categoryCode !== activeCategory) return false;
         if (filterStatus(entry) !== activeFilter) return false;
         if (isStationJudge() && !confirmableCheckpointForEntry(entry)) return false;
@@ -1137,22 +1111,17 @@
           : "全局管理员可确认任意下一站并撤回误触";
     }
 
-    function updateNfcPanel() {
+    function updateNfcLink() {
       const raceId = elements.raceId.value;
       if (!raceId || isDemoMode) {
         elements.nfcLink.hidden = true;
-        elements.nfcPanel.hidden = true;
         return;
       }
       elements.nfcLink.hidden = false;
-      const checkpoint = allowedJudgeCheckpoints()[0] || (currentJudgeScope() === "start" ? "START" : "START");
+      const checkpoint = allowedJudgeCheckpoints()[0] || "START";
       const label = checkpointLabel(checkpoint);
-      elements.nfcPanelScope.textContent = `当前预选：${label}；也可在设备设置中重新绑定站点`;
-      const frameUrl = `./web-nfc-timing-test.html?embedded=1&raceId=${encodeURIComponent(raceId)}&timingMode=manual&checkpoint=${encodeURIComponent(checkpoint)}`;
-      if (elements.nfcFrame.dataset.src !== frameUrl) {
-        elements.nfcFrame.dataset.src = frameUrl;
-        elements.nfcFrame.src = frameUrl;
-      }
+      elements.nfcLink.title = `在独立页面打开 ${label}，本页可继续手动确认`;
+      elements.nfcLink.href = `./web-nfc-timing-test.html?raceId=${encodeURIComponent(raceId)}&timingMode=manual&checkpoint=${encodeURIComponent(checkpoint)}`;
     }
 
     function applyJudgeRoleView() {
@@ -1170,7 +1139,7 @@
       });
       updateNanxiCategoryTabs();
       updateBatchScopeText();
-      updateNfcPanel();
+      updateNfcLink();
       elements.raceId.disabled = false;
       [elements.bindingLink, elements.demoLink].forEach((link) => { link.hidden = !isAdminJudge(); });
       elements.nfcLink.hidden = isDemoMode;
@@ -1293,7 +1262,7 @@
         teamCode.textContent = entry.bibNumber;
         main.append(teamCode);
       }
-      const categoryCode = entry.categoryCode || String(entry.bibNumber || "").charAt(0).toUpperCase();
+      const categoryCode = Nanxi.categoryForRow(entry) || String(entry.bibNumber || "").charAt(0).toUpperCase();
       if (Nanxi.isRace(elements.raceId.value) && Nanxi.groups[categoryCode]) {
         const category = document.createElement("span");
         category.className = "entry-category";
@@ -1349,9 +1318,10 @@
       } else if (currentStatus === "dnf") {
         if (isAdminJudge()) actions.append(actionButton("撤销退赛", "restore", entry));
       } else if (currentStatus === "not_ready") {
-        if (currentJudgeScope() === "start" && confirmableCheckpoint === "START") {
-          actions.append(actionButton("人工确认起点", "checkpoint", entry, "primary"));
-        } else if (isAdminJudge()) {
+        if (canStartTeams()) {
+          actions.append(actionButton("人工核验待发", "checkin", entry, "primary"));
+        }
+        if (isAdminJudge()) {
           actions.append(actionButton("手动时间", "manual", entry));
           actions.append(actionButton("确认退赛", "dnf", entry, "danger"));
         }
@@ -1487,6 +1457,11 @@
           : entry.result.elapsedMs;
         return;
       }
+      if (mode === "checkin") {
+        entry.status = "ready";
+        entry.confirmedAt = new Date().toISOString();
+        return;
+      }
       if (mode === "cancel-checkin") {
         entry.status = "not_ready";
         entry.confirmedAt = null;
@@ -1550,7 +1525,7 @@
       document.querySelector('meta[name="theme-color"]').content = hoka ? "#009dff" : "#111820";
       const raceId = encodeURIComponent(elements.raceId.value);
       elements.bindingLink.href = `./admin.html?raceId=${raceId}`;
-      updateNfcPanel();
+      updateNfcLink();
     }
 
     function updateUrl() {
@@ -1631,7 +1606,7 @@
         updateNanxiCategoryTabs();
         updateBranding();
         updateBatchScopeText();
-        updateNfcPanel();
+        updateNfcLink();
         entries = (queuePayload.entries || []).map((entry) => ({ ...entry, result: results.get(Number(entry.participantId)) || null }));
         const entryUnit = Nanxi.isRace(activeRace.raceId) ? "个参赛单位" : activeRace.entryType === "team" ? "支队伍" : "人";
         elements.raceName.textContent = `${raceDisplayName({ raceId: activeRace.raceId || elements.raceId.value, name: activeRace.name })} · ${entries.length} ${entryUnit}`;
@@ -1666,6 +1641,7 @@
     }
 
     function checkpointLabel(checkpoint) {
+      if (checkpoint === "START") return "起点核验 / 等待发枪";
       if (checkpoint === "END") return "终点";
       const match = String(checkpoint).match(/^STATION_(\d+)_(ENTER|EXIT|START)$/);
       if (!match) return checkpoint;
@@ -1713,13 +1689,14 @@
       elements.adjustmentFields.hidden = mode !== "adjustment";
       elements.manualFields.hidden = mode !== "manual";
       elements.checkpointFields.hidden = mode !== "checkpoint";
-      elements.operationReasonField.hidden = ["checkpoint", "rollback"].includes(mode);
-      elements.operationReason.required = !["checkpoint", "rollback"].includes(mode);
+      elements.operationReasonField.hidden = ["checkpoint", "rollback", "checkin"].includes(mode);
+      elements.operationReason.required = !["checkpoint", "rollback", "checkin"].includes(mode);
       elements.operationParticipant.textContent = `${entry.bibNumber ? `${entry.bibNumber} · ` : ""}${entry.athleteName} · ${entry.cardCode}`;
       const config = {
         adjustment: ["加减最终时间", "对已完成成绩增加罚时或减少时间。", "保存调整", "primary", "例如：动作判罚或现场复核"],
         manual: ["手动调整时间", "输入完整的开始时间和结束时间，原始刷卡记录不会被修改。", "保存手动时间", "primary", "例如：设备故障，依据备用计时记录"],
         checkpoint: ["人工确认站点", "系统已按队伍当前进度锁定下一站。请核对队伍和确认时间。", "确认本站到达", "primary", ""],
+        checkin: ["人工核验待发", "核对选手及手环号码后进入待发队列；裁判统一发枪后才开始计时。", "确认待发", "primary", ""],
         rollback: ["撤回最近确认", "只撤回该队伍最近一次站点确认，原始记录会保留并标记为已撤回。", "确认撤回", "danger", ""],
         dnf: ["确认选手退赛", "确认后选手会立即标记为 DNF。", "确认退赛", "danger", "请填写退赛原因"],
         restore: ["撤销退赛", "选手会恢复到退赛前的计时状态。", "确认恢复", "primary", "请填写恢复原因"],
@@ -1770,7 +1747,7 @@
           ? elements.manualStartTime
           : mode === "checkpoint"
             ? elements.manualCheckpointTime
-            : mode === "rollback"
+            : ["rollback", "checkin"].includes(mode)
               ? elements.confirmOperationButton
               : elements.operationReason).focus();
     }
@@ -1837,8 +1814,18 @@
           judgeToken,
           adminCode: judgeAdminCode
         };
-        if (!["checkpoint", "rollback"].includes(operationMode) && !base.reason) throw new Error("请填写备注。 ");
-        if (operationMode === "adjustment") {
+        if (!["checkpoint", "rollback", "checkin"].includes(operationMode) && !base.reason) throw new Error("请填写备注。 ");
+        if (operationMode === "checkin") {
+          if (isDemoMode) {
+            applyDemoOperation(operationMode, operationEntry, {});
+          } else {
+            const response = await readJson(await window.timingApiFetch("/api/start-checkins", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ...base, cardCode: operationEntry.cardCode, deviceId })
+            }));
+            if (response.status !== "start_ready") throw new Error("该选手已发枪或手环绑定已变化，请刷新队列后重试。");
+          }
+        } else if (operationMode === "adjustment") {
           const seconds = (Number(elements.adjustmentMinutes.value) || 0) * 60 + (Number(elements.adjustmentSeconds.value) || 0);
           if (seconds <= 0) throw new Error("调整时间必须大于 0 秒。 ");
           const adjustmentSeconds = seconds * Number(elements.adjustmentDirection.value);
@@ -2068,24 +2055,6 @@
     elements.confirmStartButton.addEventListener("click", confirmStart);
     elements.authForm.addEventListener("submit", authenticateJudge);
     elements.operationForm.addEventListener("submit", submitOperation);
-    elements.nfcLink.addEventListener("click", () => {
-      if (elements.nfcPanel.hidden) {
-        updateNfcPanel();
-        elements.nfcPanel.hidden = false;
-        elements.nfcLink.textContent = "收起 NFC";
-      } else {
-        elements.nfcPanel.hidden = true;
-        elements.nfcLink.textContent = "NFC 打卡";
-        elements.nfcFrame.src = "about:blank";
-        elements.nfcFrame.dataset.src = "";
-      }
-    });
-    elements.nfcPanelClose.addEventListener("click", () => {
-      elements.nfcPanel.hidden = true;
-      elements.nfcLink.textContent = "NFC 打卡";
-      elements.nfcFrame.src = "about:blank";
-      elements.nfcFrame.dataset.src = "";
-    });
     elements.roleSelect.addEventListener("change", () => {
       const nextRole = elements.roleSelect.value;
       if (!judgeRoleOptions.some((option) => option.role === nextRole)) return;

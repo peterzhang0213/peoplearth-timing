@@ -18,22 +18,29 @@ def registration(payload, entry):
     if race_id not in RACES:
         return {"category_code": None, "female_count": None}
     bib = str(payload.get("bibNumber") or "").strip().upper()
-    if not re.fullmatch(r"[A-G]-\d{3}", bib) or bib.endswith("-000"):
-        raise ValueError("选手号格式为 A-001 至 G-999，不能使用 000")
-    category = bib[0]
-    if category not in RACES[race_id]:
-        raise ValueError("该选手号不属于所选比赛日期：19 日 A–E，20 日 F/G")
+    if not re.fullmatch(r"[A-Z0-9][A-Z0-9_-]{0,19}", bib):
+        raise ValueError("请填写 1–20 位选手号或队伍查询号（字母、数字、横线）")
+    # Legacy clients may omit categoryCode; an explicit selection always wins.
+    category = str(payload.get("categoryCode") or (bib[0] if re.fullmatch(r"[A-G]-[0-9]{3}", bib) else "")).upper()
+    if category not in CATEGORIES or category not in RACES[race_id]:
+        raise ValueError("请选择该比赛日期的组别：19 日 A–E，20 日 F/G")
     label, entry_type, members, female_count = CATEGORIES[category]
     if entry["entry_type"] != entry_type or len(entry["member_names"]) != members:
         raise ValueError(f"{label}需要 {members} 位成员，参赛类型为 {entry_type}")
-    if payload.get("categoryCode") not in (None, "", category):
-        raise ValueError("组别与固定选手号不一致")
     if female_count is None:
         value = payload.get("femaleCount")
         if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= members:
             raise ValueError(f"请确认女性参赛人数（0–{members}）")
         female_count = value
-    return {"category_code": category, "female_count": female_count}
+    bibs = payload.get("memberBibNumbers", [])
+    if not isinstance(bibs, list) or any(not isinstance(value, str) for value in bibs):
+        raise ValueError("成员选手号必须为数组")
+    bibs = [value.strip().upper() for value in bibs]
+    if bibs and (len(bibs) != members or any(not re.fullmatch(r"[A-Z0-9][A-Z0-9_-]{0,19}", value) for value in bibs)):
+        raise ValueError(f"请填写全部 {members} 位成员的选手号")
+    if len(set(bibs)) != len(bibs):
+        raise ValueError("同一组内成员选手号不能重复")
+    return {"category_code": category, "female_count": female_count, "member_bib_numbers": bibs}
 
 
 def result_fields(participant, adjustments):

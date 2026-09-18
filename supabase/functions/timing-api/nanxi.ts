@@ -11,15 +11,19 @@ export function nanxiRegistration(payload: Record<string, unknown>, entry: {entr
   const raceId = String(payload.raceId || "");
   if (!NANXI_RACES[raceId]) return {};
   const bib = String(payload.bibNumber || "").trim().toUpperCase();
-  if (!/^[A-G]-[0-9]{3}$/.test(bib) || bib.endsWith("-000")) throw new Error("选手号格式为 A-001 至 G-999，不能使用 000");
-  const category = bib[0];
-  if (!NANXI_RACES[raceId].includes(category)) throw new Error("该选手号不属于所选比赛日期：19 日 A–E，20 日 F/G");
+  if (!/^[A-Z0-9][A-Z0-9_-]{0,19}$/.test(bib)) throw new Error("请填写 1–20 位选手号或队伍查询号（字母、数字、横线）");
+  const category = String(payload.categoryCode || (/^[A-G]-[0-9]{3}$/.test(bib) ? bib[0] : "")).toUpperCase();
+  if (!NANXI_CATEGORIES[category] || !NANXI_RACES[raceId].includes(category)) throw new Error("请选择该比赛日期的组别：19 日 A–E，20 日 F/G");
   const [label, type, members, defaultFemales] = NANXI_CATEGORIES[category];
   if (entry.entryType !== type || entry.memberNames.length !== members) throw new Error(`${label}需要 ${members} 位成员，参赛类型为 ${type}`);
-  if (payload.categoryCode && payload.categoryCode !== category) throw new Error("组别与固定选手号不一致");
   const females = defaultFemales ?? payload.femaleCount;
   if (typeof females !== "number" || !Number.isInteger(females) || females < 0 || females > members) throw new Error(`请确认女性参赛人数（0–${members}）`);
-  return {category_code: category, female_count: females};
+  const rawBibs = payload.memberBibNumbers ?? [];
+  if (!Array.isArray(rawBibs) || rawBibs.some(value => typeof value !== "string")) throw new Error("成员选手号必须为数组");
+  const bibs = rawBibs.map(value => value.trim().toUpperCase());
+  if (bibs.length && (bibs.length !== members || bibs.some(value => !/^[A-Z0-9][A-Z0-9_-]{0,19}$/.test(value)))) throw new Error(`请填写全部 ${members} 位成员的选手号`);
+  if (new Set(bibs).size !== bibs.length) throw new Error("同一组内成员选手号不能重复");
+  return {category_code: category, female_count: females, member_bib_numbers: bibs};
 }
 export function rankNanxiCategories(results: Record<string, any>[]) {
   for (const category of Object.keys(NANXI_CATEGORIES)) {

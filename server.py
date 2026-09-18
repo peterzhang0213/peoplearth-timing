@@ -48,6 +48,7 @@ PARTICIPANT_COLUMNS = (
     "bib_number",
     "entry_type",
     "member_names",
+    "member_bib_numbers",
     "category_code",
     "female_count",
     "phone",
@@ -443,6 +444,7 @@ def ensure_participant_columns(db: sqlite3.Connection) -> None:
         row["name"] for row in db.execute("PRAGMA table_info(participants)").fetchall()
     }
     migrations = {
+        "member_bib_numbers": "ALTER TABLE participants ADD COLUMN member_bib_numbers TEXT NOT NULL DEFAULT '[]'",
         "category_code": "ALTER TABLE participants ADD COLUMN category_code TEXT",
         "female_count": "ALTER TABLE participants ADD COLUMN female_count INTEGER",
         "phone": "ALTER TABLE participants ADD COLUMN phone TEXT",
@@ -987,10 +989,12 @@ def normalize_participant_entry(payload: dict) -> dict:
             raise ValueError("individual entries require exactly one member name")
         display_name = member_names[0]
     elif entry_type == "doubles":
-        if not display_name:
-            raise ValueError("doubles entries require a team name")
         if len(member_names) != 2:
             raise ValueError("doubles entries require exactly two member names")
+        if not display_name and payload.get("raceId") == "nanxi-race-20260919":
+            display_name = " / ".join(member_names)
+        if not display_name:
+            raise ValueError("doubles entries require a team name")
     else:
         if not display_name:
             raise ValueError("team entries require a team name")
@@ -1015,9 +1019,19 @@ def participant_response(row: sqlite3.Row | dict) -> dict:
     )
     source["entry_type"] = entry_type
     source["member_names"] = member_names
+    source["member_bib_numbers"] = parse_member_names(source.get("member_bib_numbers"))
     source["member_count"] = len(member_names)
     source["start_order"] = max(1, int(source.get("start_order") or 1))
     return source
+
+
+def validate_nanxi_member_bibs(db, race_id, bib_number, member_bibs, participant_id=None):
+    if not is_nanxi_race_id(race_id):
+        return
+    requested = {bib_number, *member_bibs} - {None, ""}
+    for row in db.execute("SELECT id, bib_number, member_bib_numbers FROM participants WHERE race_id = ?", (race_id,)):
+        if row["id"] != participant_id and requested.intersection({row["bib_number"], *parse_member_names(row["member_bib_numbers"])}):
+            raise ValueError("选手号或队伍查询号已绑定本场其他参赛单位")
 
 
 def optional_start_order(value) -> int | None:
@@ -1393,6 +1407,8 @@ def supabase_row(row: sqlite3.Row | dict, columns: tuple[str, ...]) -> dict:
             result["raw_json"] = {"unparsed": result["raw_json"]}
     if "member_names" in result and isinstance(result["member_names"], str):
         result["member_names"] = parse_member_names(result["member_names"])
+    if "member_bib_numbers" in result and isinstance(result["member_bib_numbers"], str):
+        result["member_bib_numbers"] = parse_member_names(result["member_bib_numbers"])
     return result
 
 
@@ -2592,7 +2608,6 @@ class TimingHandler(SimpleHTTPRequestHandler):
             supplied_code = str(payload.get("adminCode") or "")
             configured_code = leaderboard_clear_code()
             entry = normalize_participant_entry(payload)
-            nanxi_entry = nanxi_rules.registration(payload, entry)
             entry_type = entry["entry_type"]
             bib_number = normalize_bib_number(
                 payload.get("bibNumber"), race_id, entry_type
@@ -2662,6 +2677,7 @@ class TimingHandler(SimpleHTTPRequestHandler):
             now = utc_now()
             try:
                 with connect_db() as db:
+                    db.execute("BEGIN IMMEDIATE")
                     existing = db.execute(
                         "SELECT * FROM participants WHERE race_id = ? AND id = ?",
                         (race_id, participant_id),
@@ -2672,6 +2688,12 @@ class TimingHandler(SimpleHTTPRequestHandler):
                             HTTPStatus.NOT_FOUND,
                         )
                         return
+                    nanxi_entry = nanxi_rules.registration({
+                        **payload,
+                        "categoryCode": payload.get("categoryCode", existing["category_code"]),
+                        "memberBibNumbers": payload.get("memberBibNumbers", parse_member_names(existing["member_bib_numbers"])),
+                    }, entry)
+                    validate_nanxi_member_bibs(db, race_id, bib_number, nanxi_entry.get("member_bib_numbers", []), participant_id)
                     if (entry_type != "individual" or is_nanxi_race_id(race_id)) and bib_number and db.execute(
                         "SELECT 1 FROM participants WHERE race_id = ? AND bib_number = ? "
                         "AND id <> ? LIMIT 1",
@@ -2721,9 +2743,9 @@ class TimingHandler(SimpleHTTPRequestHandler):
                             participant_id,
                         ),
                     )
-                    db.execute("UPDATE participants SET category_code = ?, female_count = ? "
+                    db.execute("UPDATE participants SET category_code = ?, female_count = ?, member_bib_numbers = ? "
                                "WHERE race_id = ? AND id = ?",
-                               (nanxi_entry["category_code"], nanxi_entry["female_count"], race_id, participant_id))
+                               (nanxi_entry["category_code"], nanxi_entry["female_count"], json.dumps(nanxi_entry.get("member_bib_numbers", [])), race_id, participant_id))
                     row = db.execute(
                         "SELECT * FROM participants WHERE race_id = ? AND id = ?",
                         (race_id, participant_id),
@@ -3069,6 +3091,8 @@ class TimingHandler(SimpleHTTPRequestHandler):
                     "startBatch": participant.get("start_batch"),
                     "entryType": participant["entry_type"],
                     "memberNames": participant["member_names"],
+                    "memberBibNumbers": participant.get("member_bib_numbers", []),
+                    "categoryCode": participant.get("category_code"),
                     "cardCode": participant["card_code"],
                     "checkInStatus": participant.get("check_in_status")
                     or "not_checked_in",
@@ -3444,6 +3468,8 @@ class TimingHandler(SimpleHTTPRequestHandler):
                             "athleteName": participant["athlete_name"],
                             "entryType": participant["entry_type"],
                             "memberNames": participant["member_names"],
+                            "memberBibNumbers": participant.get("member_bib_numbers", []),
+                            "categoryCode": participant.get("category_code"),
                             "startedAt": started_at,
                         }
                         for participant in participant_payloads
@@ -4451,6 +4477,7 @@ class TimingHandler(SimpleHTTPRequestHandler):
                     "cardCode": participant["card_code"],
                     "entryType": participant_data["entry_type"],
                     "memberNames": participant_data["member_names"],
+                    "memberBibNumbers": participant_data["member_bib_numbers"],
                     "memberCount": participant_data["member_count"],
                     "phone": participant["phone"],
                     "gender": participant["gender"],
@@ -4804,6 +4831,8 @@ class TimingHandler(SimpleHTTPRequestHandler):
             now = utc_now()
             try:
                 with connect_db() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    validate_nanxi_member_bibs(db, race_id, bib_number, nanxi_entry.get("member_bib_numbers", []))
                     if (entry_type != "individual" or is_nanxi_race_id(race_id)) and bib_number and db.execute(
                         "SELECT 1 FROM participants WHERE race_id = ? AND bib_number = ? "
                         "LIMIT 1",
@@ -4859,9 +4888,9 @@ class TimingHandler(SimpleHTTPRequestHandler):
                             now,
                         ),
                     )
-                    db.execute("UPDATE participants SET category_code = ?, female_count = ? "
+                    db.execute("UPDATE participants SET category_code = ?, female_count = ?, member_bib_numbers = ? "
                                "WHERE race_id = ? AND card_code = ?",
-                               (nanxi_entry["category_code"], nanxi_entry["female_count"], race_id, card_code))
+                               (nanxi_entry["category_code"], nanxi_entry["female_count"], json.dumps(nanxi_entry.get("member_bib_numbers", [])), race_id, card_code))
                     row = db.execute(
                         "SELECT * FROM participants WHERE race_id = ? AND card_code = ?",
                         (race_id, card_code),

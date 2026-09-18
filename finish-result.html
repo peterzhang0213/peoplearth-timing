@@ -78,10 +78,29 @@
     </article>
   </main>
   <section id="presentation" class="presentation" aria-label="全屏成绩"><button id="presentationExit" class="presentation-exit" type="button">退出全屏</button><img class="presentation-logo" src="./assets/nanxi-main-visual-cropped.svg" alt="Nanxi主视觉"><div><div id="presentationLabel" class="presentation-label"></div><div id="presentationName" class="presentation-name"></div><div id="presentationMembers" class="presentation-members"></div></div><div id="presentationTime" class="presentation-time">--:--:--</div></section>
-  <script src="./timing-api.js"></script>
-  <script src="./nanxi.js"></script>
+<script>
+(() => {
+  const startedAt = Date.now();
+  const showDependencyError = () => {
+    if (window.Nanxi && window.timingApiFetch) return;
+    const status = document.querySelector('#connection, #message');
+    if (status) { status.textContent = '成绩脚本未加载成功，请刷新页面或检查网络连接。'; status.classList.add('error'); }
+    const output = document.querySelector('#rows, #entries');
+    if (output && !output.textContent.trim()) output.textContent = '暂时无法读取成绩';
+  };
+  const timer = setInterval(() => {
+    if (window.Nanxi && window.timingApiFetch) clearInterval(timer);
+    else if (Date.now() - startedAt > 12000) { clearInterval(timer); showDependencyError(); }
+  }, 250);
+  window.addEventListener('error', event => { if (event.target?.tagName === 'SCRIPT') showDependencyError(); }, true);
+})();
+</script>
+  <script src="./timing-api.js?v=20260919-2" defer></script>
+  <script src="./nanxi.js?v=20260919-3" defer></script>
   <script>
-    const $ = (selector) => document.querySelector(selector);
+    window.addEventListener('DOMContentLoaded', () => {
+      if (!window.Nanxi || !window.timingApiFetch) return;
+      const $ = (selector) => document.querySelector(selector);
     const urlParams = new URLSearchParams(location.search);
     const raceIds = {19: (urlParams.get("race19") || Nanxi.races[19]).trim(), 20: (urlParams.get("race20") || Nanxi.races[20]).trim()};
     const initialDemo = urlParams.has("demo") ? urlParams.get("demo") === "1" : !raceIds[19] && !raceIds[20];
@@ -101,7 +120,7 @@
       const group = row.categoryLabel || (day === "20" ? (members.length === 4 ? "四人接力" : "双人接力") : groupLabels[String(row.bibNumber||"").charAt(0)] || "赛事成绩");
       $("#eventLabel").textContent = `${isDemo ? "演示成绩 · " : ""}9 月 ${day} 日 · ${group}`;
       $("#entryName").textContent = row.athleteName || "未命名队伍";
-      $("#memberNames").textContent = row.entryType === "individual" ? "个人参赛" : members.join(" / ");
+      $("#memberNames").textContent = row.entryType === "individual" ? "个人参赛" : Nanxi.memberCaption(row);
       $("#bibLabel").textContent = row.bibNumber || "--";
       $("#finishTime").textContent = formatDate(row.finishTime);
       $("#totalTime").textContent = formatDuration(row.elapsedMs);
@@ -112,7 +131,7 @@
       $("#stamp").textContent = `${row.categoryRank ? `组别排名：第 ${row.categoryRank} 名 · ` : ""}状态：${row.status === "finished" ? "已完赛" : row.status === "racing" ? "比赛中" : "暂无完赛时间"} · 生成于 ${formatDate(new Date().toISOString())}`;
       $("#presentationLabel").textContent = `${isDemo ? "演示成绩 · " : ""}9 月 ${day} 日 · 总成绩`;
       $("#presentationName").textContent = row.athleteName || "未命名队伍";
-      $("#presentationMembers").textContent = row.entryType === "individual" ? "" : members.join(" / ");
+      $("#presentationMembers").textContent = Nanxi.memberCaption(row);
       $("#presentationTime").textContent = formatDuration(row.elapsedMs);
       $("#resultCard").classList.add("visible");
     }
@@ -129,7 +148,7 @@
       try { if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen(); } catch { /* CSS presentation remains available. */ }
     }
     function demoRow(bib, day) {
-      return Nanxi.mock(day).leaderboard.find(row=>row.bibNumber === bib) || null;
+      return Nanxi.mock(day).leaderboard.find(row=>Nanxi.matchesBib(row, bib)) || null;
     }
     function resetLookup() {
       requestVersion++;
@@ -175,7 +194,7 @@
         if (version !== requestVersion) return;
         if (!payload.ok || !Array.isArray(payload.leaderboard)) { showMessage("成绩服务返回的数据异常，请稍后重试。",true); return; }
         if (!payload.leaderboard.length) { showMessage("当前绑定赛事还没有参赛成绩，暂时无法查询。",true); return; }
-        const row = payload.leaderboard.find(item => normalizeBib(item.bibNumber) === bib);
+        const row = payload.leaderboard.find(item => Nanxi.matchesBib(item, bib));
         if (!row) { showMessage(`没有找到 ${bib}，请检查比赛日期或编号。`,true); return; }
         if (row.status !== "finished") { showMessage(`${bib} 尚无完赛成绩，完成比赛后再查询。`,true); return; }
         render(row, day, false); showMessage("查询成功，可直接用于现场拍照。");
@@ -208,6 +227,7 @@
     $("#dayInput").value = urlParams.get('day') === '20' || ['F','G'].includes(requestedBib[0]) ? '20' : '19';
     updateSource(); updateClock(); setInterval(updateClock,1000);
     if (requestedBib) { $("#bibInput").value = requestedBib; lookup({preventDefault(){}}); }
+      });
   </script>
 </body>
 </html>

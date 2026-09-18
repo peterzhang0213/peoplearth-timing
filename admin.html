@@ -373,7 +373,7 @@
 
     /* Our label styles otherwise override the browser's default
        [hidden] rule, which made the relay-only field remain visible on day 1. */
-    #nanxiFemaleField[hidden] {
+    #nanxiFemaleField[hidden], #nanxiCategoryField[hidden] {
       display: none !important;
     }
 
@@ -582,7 +582,7 @@
       <a href="./admin.html" aria-current="page">比赛与绑定</a>
       <a href="./judge.html">裁判台</a>
       <a href="./web-nfc-timing-test.html">手机 NFC</a>
-      <a href="./leaderboard.html">数据大屏</a>
+      <a id="navLeaderboardLink" href="./leaderboard.html">数据大屏</a>
     </nav>
   </header>
 
@@ -635,12 +635,12 @@
       <h2>参赛登记 / NFC 绑定</h2>
       <p id="bindingIntro">一张 NFC 卡对应一个参赛单位；HOKA 队伍编号使用 01-01 格式，出发批次可留空。</p>
       <div id="nanxiBindingTools" hidden>
-        <label>按固定选手号查找<input id="nanxiLookupBib" placeholder="例如 A-001 / F-001"></label>
+        <label>按选手号或队伍查询号查找<input id="nanxiLookupBib" placeholder="例如 A-001 / F-001"></label>
         <div class="actions"><button type="button" id="nanxiLookupButton">查找选手 / 绑定手环</button><button type="button" id="nanxiScanButton" class="secondary">读取 NFC 手环号码</button></div>
-        <p>已登记选手按编号调出资料后绑定手环；首次登记请填写下方固定选手号、姓名和成员。一队共用一个计时手环。</p>
+        <p>组别由工作人员选择，与号码前缀无关。双人/四人各有自己的选手号，全队共用一个计时手环。</p>
         <details class="bulk-binding">
           <summary>批量登记 / 绑定（适合 200+ 人）</summary>
-          <p>上传 CSV 后自动逐条登记。表头：<code>bibNumber,athleteName,member1,member2,member3,member4,cardCode,femaleCount</code>。单人只填 athleteName，双人填 member1/2，四人接力填 member1–4；手环号码填在 cardCode。</p>
+          <p>上传 CSV 后自动逐条登记。表头：<code>categoryCode,bibNumber,athleteName,member1,member1Bib,member2,member2Bib,member3,member3Bib,member4,member4Bib,cardCode,femaleCount</code>。categoryCode 填所选组别 A–G；每位成员填写姓名和 Bib 选手号。bibNumber 为队伍查询号，可使用成员 1 的选手号；cardCode 为全队唯一手环号。</p>
           <div class="actions"><button type="button" id="downloadNanxiTemplate" class="secondary">下载当前日期模板</button><button type="button" id="createNanxiTestData" class="secondary">生成 test1 / test2 测试数据</button><button type="button" id="deleteNanxiTestData" class="danger">一键删除测试数据</button><label class="file-button">选择 CSV<input id="nanxiBulkFile" type="file" accept=".csv,text/csv"></label></div>
           <div id="nanxiBulkStatus" class="status" role="status">尚未选择文件。</div>
         </details>
@@ -657,6 +657,7 @@
             </optgroup>
           </select>
         </label>
+        <label id="nanxiCategoryField" hidden>Division / 比赛组别<select id="nanxiCategoryCode"></select></label>
         <label>
           参赛类型
           <select id="entryType">
@@ -934,7 +935,7 @@
   </div>
 
   <script src="./timing-api.js"></script>
-  <script src="./nanxi.js"></script>
+  <script src="./nanxi.js?v=20260919-3"></script>
   <script>
     const accessBackdrop = document.querySelector("#accessBackdrop");
     const accessForm = document.querySelector("#accessForm");
@@ -1185,7 +1186,12 @@
         .map((input) => input.value.trim());
     }
 
-    function renderMemberFields(count, preferredNames = []) {
+    function currentMemberBibs() {
+      return Array.from(memberFields.querySelectorAll("input[data-member-bib]"), input => Nanxi.normalizeBib(input.value));
+    }
+
+    function renderMemberFields(count, preferredNames = [], preferredBibs = []) {
+      const bibs = preferredBibs.length ? preferredBibs : currentMemberBibs();
       const existingNames = currentMemberNames();
       const names = preferredNames.length ? preferredNames : existingNames;
       memberFields.innerHTML = Array.from({ length: count }, (_, index) => `
@@ -1198,6 +1204,7 @@
             autocomplete="off"
             required>
         </label>
+        ${Nanxi.isRace(selectedRaceId()) ? `<label>成员 ${index + 1} 选手号<input data-member-bib value="${escapeHtml(bibs[index] || '')}" maxlength="20" pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,19}" placeholder="例如 1001" autocomplete="off" required></label>` : ""}
       `).join("");
     }
 
@@ -1208,6 +1215,8 @@
       const previousEntryType = activeEntryType;
       entryTypeSelect.value = normalized;
       const isIndividual = normalized === "individual";
+      const optionalTeamName = normalized === "doubles" && selectedRaceId() === "nanxi-race-20260919";
+      athleteNameInput.required = !optionalTeamName;
       const requiresFinalTeamCode = !isIndividual && selectedRaceId().startsWith("hoka-race-final");
       const memberCount = isIndividual
         ? 1
@@ -1221,12 +1230,12 @@
       displayNameLabel.textContent = isIndividual
         ? "选手姓名"
         : normalized === "doubles"
-          ? "双人组名称"
+          ? optionalTeamName ? "双人组名称（选填）" : "双人组名称"
           : "团队名称";
       athleteNameInput.placeholder = isIndividual
         ? "Peter Zhang"
         : normalized === "doubles"
-          ? "Fast Pair"
+          ? optionalTeamName ? "留空显示两位成员姓名" : "Fast Pair"
           : "SRC Team";
       bibNumberLabel.textContent = isIndividual
         ? "选手编号（选填）"
@@ -1309,13 +1318,17 @@
         ? participant.member_names
         : [participant.athlete_name];
       const entryType = participant.entry_type || "individual";
+      if (selectedRaceId() === 'nanxi-race-20260919' && entryType === 'doubles'
+          && participant.athlete_name === memberNames.join(' / ')) athleteNameInput.value = '';
       if (entryType === "team") memberCountInput.value = String(Math.max(2, memberNames.length));
       applyEntryType(entryType, memberNames);
       if (entryType === "team") {
         memberCountInput.value = String(Math.max(2, memberNames.length));
         renderMemberFields(Math.max(2, memberNames.length), memberNames);
       }
+      document.querySelector("#nanxiCategoryCode").value = Nanxi.categoryForRow(participant) || '';
       applyNanxiEntry();
+      if (entryType !== 'individual') renderMemberFields(memberNames.length, memberNames, participant.member_bib_numbers || []);
       document.querySelector("#nanxiFemaleCount").value = participant.female_count == null ? "" : String(participant.female_count);
       saveParticipantButton.textContent = "保存修改";
       cancelEditButton.hidden = false;
@@ -1703,7 +1716,9 @@
     }
 
     function updateRaceLinks(raceId) {
-      leaderboardLink.href = `./leaderboard.html?raceId=${encodeURIComponent(raceId)}`;
+      const page = Nanxi.isRace(raceId) ? "nanxi-leaderboard-preview.html" : "leaderboard.html";
+      leaderboardLink.href = `./${page}?raceId=${encodeURIComponent(raceId)}`;
+      document.querySelector("#navLeaderboardLink").href = leaderboardLink.href;
     }
 
     function buildRaceGroup(label, races) {
@@ -1868,7 +1883,7 @@
         const memberSummary = entryType === "individual"
           ? escapeHtml(participant.athlete_name)
           : escapeHtml(memberNames.join(" / "));
-        const categoryCode = participant.category_code || Nanxi.normalizeBib(participant.bib_number || "").charAt(0);
+        const categoryCode = Nanxi.categoryForRow(participant);
         const category = Nanxi.isRace(raceId) && Nanxi.groups[categoryCode] ? Nanxi.groups[categoryCode] : null;
         return `
           <tr>
@@ -1916,30 +1931,37 @@
 
     function applyNanxiEntry() {
       const isNanxi = Nanxi.isRace(selectedRaceId());
-      const code = Nanxi.normalizeBib(bibNumberInput.value)[0];
+      const category = document.querySelector('#nanxiCategoryCode');
+      const allowed = Nanxi.codes(Nanxi.dayForRace(selectedRaceId()));
+      const selected = category.value;
+      category.replaceChildren(new Option('请选择组别', ''), ...allowed.map(code => new Option(Nanxi.groups[code].label, code)));
+      category.value = allowed.includes(selected) ? selected : '';
+      category.required = isNanxi; category.disabled = !isNanxi;
+      document.querySelector('#nanxiCategoryField').hidden = !isNanxi;
+      document.querySelector('#nanxiBindingTools').hidden = !isNanxi;
+      const code = category.value;
       const config = isNanxi ? Nanxi.groups[code] : null;
-      const relay = isNanxi && ["F", "G"].includes(code);
-      document.querySelector("#nanxiBindingTools").hidden = !isNanxi;
-      document.querySelector("#bindingIntro").textContent = isNanxi
-        ? "选手号固定：19 日 A 男单 / B 女单 / C 男双 / D 女双 / E 混双；20 日 F 双人接力 / G 四人接力。"
-        : "一张 NFC 卡对应一个参赛单位；HOKA 队伍编号使用 01-01 格式，出发批次可留空。";
+      const relay = isNanxi && ['F','G'].includes(code);
+      document.querySelector('#bindingIntro').textContent = isNanxi
+        ? '先选择比赛组别，再填写号码。双人 / 四人各有独立选手号，全队共用一个手环、一份计时成绩。'
+        : '一张 NFC 卡对应一个参赛单位；HOKA 队伍编号使用 01-01 格式，出发批次可留空。';
       if (config) {
-        if (config.type === 'team') memberCountInput.value = config.size;
         applyEntryType(config.type);
-        if (config.type !== 'individual') { memberCountInput.value = config.size; renderMemberFields(config.size); }
+        memberCountInput.value = config.size;
+        if (config.type !== 'individual') renderMemberFields(config.size);
       }
-      // Nanxi fixes the valid type from the bib prefix when it is known, but
-      // keeps the control usable so staff can select and inspect the type.
-      entryTypeSelect.disabled = false;
+      entryTypeSelect.disabled = isNanxi;
       raceConfigId.readOnly = isNanxi;
       document.querySelector('#raceMode').disabled = isNanxi;
       raceEntryTypeSelect.disabled = isNanxi;
       if (isNanxi) {
-        bibNumberInput.required = true; bibNumberInput.pattern = "[A-G]-[0-9]{3}";
-        bibNumberInput.placeholder = selectedRaceId().endsWith('20') ? "F-001 / G-001" : "A-001 / B-001 / C-001 / D-001 / E-001";
-        bibNumberInput.readOnly = Boolean(editingParticipantId);
-        bibNumberLabel.textContent = '固定选手号';
-        bibNumberHelp.textContent = config ? config.label : '输入选手号后自动识别组别';
+        const individual = !config || config.type === 'individual';
+        bibNumberInput.required = individual;
+        bibNumberInput.pattern = '[A-Za-z0-9][A-Za-z0-9_-]{0,19}';
+        bibNumberInput.placeholder = individual ? '例如 1001 / A-001' : '留空使用成员 1 的选手号';
+        bibNumberInput.readOnly = false;
+        bibNumberLabel.textContent = individual ? '选手号' : '队伍查询号（选填）';
+        bibNumberHelp.textContent = '号码不决定组别；成员选手号也可用于查询整组成绩。';
         memberCountInput.disabled = true;
         individualFields.forEach(field => { field.classList.add('field-hidden'); field.querySelectorAll('input,select').forEach(input=>input.disabled=true); });
       } else { bibNumberInput.readOnly = false; }
@@ -1948,19 +1970,21 @@
       [...females.options].forEach(option => { option.disabled = relay && option.value !== '' && Number(option.value) > config.size; });
       if (relay && Number(females.value) > config.size) females.value = '';
     }
-    bibNumberInput.addEventListener('input',applyNanxiEntry);
+    document.querySelector('#nanxiCategoryCode').addEventListener('change', applyNanxiEntry);
     document.querySelector('#nanxiLookupButton').addEventListener('click', async () => {
       try {
         const bib = Nanxi.normalizeBib(document.querySelector('#nanxiLookupBib').value);
         const raceId = selectedRaceId();
         const payload = await requestJson(`/api/participants?raceId=${encodeURIComponent(raceId)}`);
         if (raceId !== selectedRaceId()) return;
-        const participant = payload.participants.find(row=>Nanxi.normalizeBib(row.bib_number) === bib);
-        if (!participant) { resetParticipantForm('该编号尚未登记，请补充姓名和手环号码后保存。'); bibNumberInput.value = bib; applyNanxiEntry(); return; }
+        const participant = payload.participants.find(row=>Nanxi.matchesBib(row, bib));
+        if (!participant) { resetParticipantForm('该编号尚未登记，请选择组别并补充姓名、成员选手号和手环号码。'); bibNumberInput.value = bib; applyNanxiEntry(); return; }
         editParticipant(participant); cardCodeInput.focus(); cardCodeInput.select();
       } catch(error) { setStatus(error.message,true); }
     });
     document.querySelector('#nanxiScanButton').addEventListener('click', async () => {
+      if (window.self !== window.top) { setStatus('当前为嵌入页面，无法读取 NFC。请在安卓 Chrome 独立打开本页；也可输入手环号码后保存绑定。',true); return; }
+      if (!window.isSecureContext) { setStatus('读取 NFC 需要 HTTPS 安全页面；也可直接输入手环号码后保存绑定。',true); return; }
       if (!('NDEFReader' in window)) { setStatus('读取 NFC 请使用安卓 Chrome；也可直接输入手环上的号码。',true); return; }
       const abort = new AbortController(); const timeout = setTimeout(()=>abort.abort(),30000);
       try {
@@ -2000,8 +2024,8 @@
       const raceId = selectedRaceId();
       if (!Nanxi.isRace(raceId)) return;
       const codes = Nanxi.codes(Nanxi.dayForRace(raceId));
-      const lines = [['bibNumber','athleteName','member1','member2','member3','member4','cardCode','femaleCount']];
-      codes.forEach(code => { for (let number = 1; number <= 20; number += 1) lines.push([`${code}-${String(number).padStart(3,'0')}`,'','','','','','','']); });
+      const lines = [['categoryCode','bibNumber','athleteName','member1','member1Bib','member2','member2Bib','member3','member3Bib','member4','member4Bib','cardCode','femaleCount']];
+      codes.forEach(code => { for (let number = 1; number <= 20; number += 1) lines.push([code,`${code}-${String(number).padStart(3,'0')}`,'','','','','','','','','','','']); });
       const blob = new Blob([lines.map(row => row.map(csvCell).join(',')).join('\n')], {type:'text/csv;charset=utf-8'});
       const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `nanxi-${Nanxi.dayForRace(raceId)}-binding-template.csv`; link.click(); URL.revokeObjectURL(link.href);
     });
@@ -2017,19 +2041,21 @@
       let success = 0; const failures = [];
       for (let index = 0; index < rows.length; index += 1) {
         const row = rows[index]; const bib = Nanxi.normalizeBib(row.bibnumber || row.bib || row['选手号']);
-        const code = bib.charAt(0); const config = Nanxi.groups[code];
+        const code = String(row.categorycode || row['组别'] || '').trim().toUpperCase(); const config = Nanxi.groups[code];
         try {
-          if (!config || !Nanxi.codes(Nanxi.dayForRace(raceId)).includes(code)) throw new Error('选手号与比赛日期不匹配');
+          if (!config || !Nanxi.codes(Nanxi.dayForRace(raceId)).includes(code)) throw new Error('请填写该日期的 categoryCode 组别');
           const cardCode = String(row.cardcode || row.card || row['手环号码'] || '').trim().toUpperCase();
           if (!cardCode) throw new Error('缺少 cardCode');
           const memberNames = config.size === 1
             ? [String(row.athletename || row.name || row['选手姓名'] || '').trim()]
             : Array.from({length: config.size}, (_, memberIndex) => String(row[`member${memberIndex + 1}`] || row[`成员${memberIndex + 1}`] || '').trim());
           if (memberNames.some(name => !name)) throw new Error(`需要填写 ${config.size} 名成员`);
+          const memberBibNumbers = config.size === 1 ? [bib] : Array.from({length:config.size}, (_, i) => Nanxi.normalizeBib(row[`member${i+1}bib`]));
+          if (memberBibNumbers.some(value => !value)) throw new Error('请填写每位成员的选手号');
           const relay = code === 'F' || code === 'G';
           const femaleValue = relay ? Number(row.femalecount || row['女性人数'] || 0) : null;
           if (relay && (!Number.isInteger(femaleValue) || femaleValue < 0 || femaleValue > config.size)) throw new Error('女性人数无效');
-          const payload = {raceId, bibNumber: bib, cardCode, athleteName: config.size === 1 ? memberNames[0] : String(row.athletename || row.teamname || row['队伍名称'] || `Nanxi ${bib}`).trim(), entryType: config.type, memberNames, categoryCode: code, femaleCount: femaleValue, checkInStatus: 'checked_in'};
+          const payload = {raceId, bibNumber: bib, cardCode, athleteName: config.size === 1 ? memberNames[0] : String(row.athletename || row.teamname || row['队伍名称'] || '').trim(), entryType: config.type, memberNames, memberBibNumbers, categoryCode: code, femaleCount: femaleValue, checkInStatus: 'checked_in'};
           const old = existing.get(bib); let result;
           if (old) result = await requestJson('/api/update-participant', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...payload, participantId: old.id, confirmation: 'UPDATE_PARTICIPANT', adminCode: adminAuthCode})});
           else result = await requestJson('/api/participants', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
@@ -2128,7 +2154,7 @@
           raceId: selectedRaceId(),
           cardCode: cardCodeInput.value.trim().toUpperCase(),
           athleteName: displayName,
-          bibNumber: bibNumberInput.value.trim(),
+          bibNumber: Nanxi.normalizeBib(bibNumberInput.value) || (Nanxi.isRace(selectedRaceId()) ? currentMemberBibs()[0] : ""),
           entryType,
           memberNames,
           phone: entryType === "individual" ? document.querySelector("#phone").value.trim() : "",
@@ -2136,7 +2162,8 @@
           division: entryType === "individual" ? document.querySelector("#division").value : "",
           checkInStatus: document.querySelector("#checkInStatus").value,
           startBatch: startBatchInput.value ? Number(startBatchInput.value) : null,
-          ...(Nanxi.isRace(selectedRaceId()) ? {categoryCode: Nanxi.normalizeBib(bibNumberInput.value)[0],
+          ...(Nanxi.isRace(selectedRaceId()) ? {categoryCode: document.querySelector("#nanxiCategoryCode").value,
+            memberBibNumbers: entryType === "individual" ? [Nanxi.normalizeBib(bibNumberInput.value)] : currentMemberBibs(),
             femaleCount: document.querySelector("#nanxiFemaleCount").value === "" ? null : Number(document.querySelector("#nanxiFemaleCount").value)} : {}),
         };
         const isEditing = Number.isInteger(editingParticipantId) && editingParticipantId > 0;
