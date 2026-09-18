@@ -923,6 +923,12 @@
 
     function updateNavigation() {
       const params = new URLSearchParams({ raceId: elements.raceId.value.trim() });
+      if (elements.timingMode.value === "manual" && Nanxi.isRace(elements.raceId.value.trim())) {
+        const checkpoint = elements.stationId.value;
+        const station = checkpoint.match(/^STATION_(\d+)_START$/);
+        params.set("role", checkpoint === "START" ? "start" : checkpoint === "END"
+          ? `station_${raceProfile?.stationCount || 8}` : station ? `station_${Number(station[1]) - 1}` : "admin");
+      }
       document.querySelector("#manualJudgeLink").href = `./judge.html?${params}`;
       const url = new URL(location.href);
       url.searchParams.delete("embedded");
@@ -1212,6 +1218,10 @@
       return deviceBindings.find((binding) => binding.device_id === deviceId) || null;
     }
 
+    function isSharedFinish(assignment) {
+      return Nanxi.isRace(elements.raceId.value.trim()) && assignment === "END";
+    }
+
     function assignmentLabel(assignment) {
       return ["RUN_IN", "RUN_OUT", "FINISH"].includes(assignment)
         ? shortRoleLabel(assignment)
@@ -1235,9 +1245,9 @@
       Array.from(select.options).forEach((option) => {
         if (!option.dataset.bindingLabel) option.dataset.bindingLabel = option.textContent;
         const binding = deviceBindings.find((item) => item.assignment === option.value);
-        const occupiedByAnotherDevice = Boolean(binding && binding.device_id !== deviceId);
+        const occupiedByAnotherDevice = !isSharedFinish(option.value) && Boolean(binding && binding.device_id !== deviceId);
         option.textContent = option.dataset.bindingLabel
-          + (occupiedByAnotherDevice ? "（已占用）" : "");
+          + (isSharedFinish(option.value) ? "（可多机同时打卡）" : occupiedByAnotherDevice ? "（已占用）" : "");
         const unavailableFinish = select === elements.gateRole
           && option.value === "FINISH"
           && raceProfile?.mode !== "three_reader_auto";
@@ -1255,7 +1265,7 @@
       const scanning = document.body.classList.contains("scanning") || startingScan;
       const busy = scanning || configurationLoading || bindingBusy;
       const selectedBinding = deviceBindings.find((binding) => binding.assignment === bindingAssignment());
-      const selectedOccupied = Boolean(selectedBinding && selectedBinding.device_id !== deviceId);
+      const selectedOccupied = !isSharedFinish(bindingAssignment()) && Boolean(selectedBinding && selectedBinding.device_id !== deviceId);
 
       elements.deviceId.readOnly = true;
       elements.deviceId.disabled = scanning;
@@ -1277,6 +1287,10 @@
         elements.deviceBindingStatus.textContent = "当前站点已被其他手机占用，请选择空闲站点。";
         elements.deviceBindingStatus.dataset.tone = "warning";
         elements.bindDeviceButton.textContent = "绑定本机站点";
+      } else if (deviceId && isSharedFinish(bindingAssignment())) {
+        elements.deviceBindingStatus.textContent = "终点支持多台手机同时绑定；不同选手可同时打卡，同一选手只记录一次完赛。";
+        elements.deviceBindingStatus.dataset.tone = "success";
+        elements.bindDeviceButton.textContent = "绑定本机到终点";
       } else if (deviceId) {
         elements.deviceBindingStatus.textContent = "本机尚未绑定；选择空闲站点后确认绑定。";
         elements.deviceBindingStatus.dataset.tone = "warning";

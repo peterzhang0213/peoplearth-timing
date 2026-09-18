@@ -313,8 +313,7 @@ def init_db() -> None:
               assignment TEXT NOT NULL,
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL,
-              UNIQUE (race_id, device_id),
-              UNIQUE (race_id, assignment)
+              UNIQUE (race_id, device_id)
             );
 
             CREATE TABLE IF NOT EXISTS result_adjustments (
@@ -414,6 +413,7 @@ def init_db() -> None:
               ON judge_station_accounts (race_id, active, role);
             """
         )
+        ensure_device_binding_constraints(db)
         ensure_participant_columns(db)
         db.execute("DROP INDEX IF EXISTS idx_participants_race_bib_number")
         db.execute(
@@ -437,6 +437,26 @@ def init_db() -> None:
               ON timing_events (race_id, card_code, timing_mode, gate_role, event_time DESC)
             """
         )
+
+
+def ensure_device_binding_constraints(db: sqlite3.Connection) -> None:
+    definition = db.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'device_bindings'").fetchone()[0]
+    if re.search(r"UNIQUE\s*\(\s*race_id\s*,\s*assignment\s*\)", definition, re.I):
+        # SQLite cannot drop a table-level UNIQUE constraint. Copy the bindings
+        # transactionally so existing device IDs, row IDs and times stay intact.
+        if not db.in_transaction:
+            db.execute("BEGIN IMMEDIATE")
+        db.execute("ALTER TABLE device_bindings RENAME TO device_bindings_legacy")
+        db.execute("""CREATE TABLE device_bindings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, race_id TEXT NOT NULL,
+            device_id TEXT NOT NULL, assignment TEXT NOT NULL,
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+            UNIQUE (race_id, device_id))""")
+        db.execute("INSERT INTO device_bindings SELECT * FROM device_bindings_legacy")
+        db.execute("DROP TABLE device_bindings_legacy")
+    db.execute("""CREATE UNIQUE INDEX IF NOT EXISTS device_bindings_exclusive_assignment
+        ON device_bindings(race_id, assignment)
+        WHERE NOT (race_id IN ('nanxi-race-20260919','nanxi-race-20260920') AND assignment = 'END')""")
 
 
 def ensure_participant_columns(db: sqlite3.Connection) -> None:
@@ -769,9 +789,9 @@ def ensure_default_judge_station_accounts(db: sqlite3.Connection) -> None:
     """Provision the standard Nanxi station logins without overwriting custom accounts."""
     now = utc_now()
     for race_id in sorted(NANXI_RACE_IDS):
-        for station_number in range(1, 9):
-            role = f"station_{station_number}"
-            username = role
+        for station_number in range(9):
+            role = "start" if station_number == 0 else f"station_{station_number}"
+            username = f"station_{station_number}"
             password = f"station{station_number}"
             salt, password_hash = create_judge_password(password)
             db.execute(
@@ -789,7 +809,7 @@ def ensure_default_judge_station_accounts(db: sqlite3.Connection) -> None:
                     username,
                     password_hash,
                     salt,
-                    f"站点 {station_number}",
+                    "待发区 / 发枪" if station_number == 0 else f"站点 {station_number}",
                     now,
                     now,
                 ),
@@ -1877,7 +1897,10 @@ class TimingHandler(SimpleHTTPRequestHandler):
                 )
                 return
             race_id = str(payload.get("raceId") or "").strip()
-            username = str(payload.get("username") or "").strip().lower()
+            requested_role = str(payload.get("role") or "").strip().lower()
+            if requested_role and requested_role not in {"admin", "start", *(f"station_{i}" for i in range(1, 21))}:
+                raise ValueError("Invalid judge role")
+            username = "admin" if requested_role == "admin" else str(payload.get("username") or "").strip().lower()
             password = str(payload.get("password") or "")
             supplied_code = str(payload.get("adminCode") or password)
             if username == "admin":
@@ -1890,14 +1913,14 @@ class TimingHandler(SimpleHTTPRequestHandler):
                 role = "admin"
                 display_name = "全局管理员"
                 race_id = "*"
-            elif username:
+            elif requested_role or username:
                 if not race_id:
                     raise ValueError("raceId is required for a station account")
                 with connect_db() as db:
                     account = db.execute(
                         "SELECT * FROM judge_station_accounts "
-                        "WHERE race_id = ? AND username = ? AND active = 1",
-                        (race_id, username),
+                        f"WHERE race_id = ? AND {'role' if requested_role else 'username'} = ? AND active = 1",
+                        (race_id, requested_role or username),
                     ).fetchone()
                 if not account or not verify_judge_password(
                     password, account["password_hash"], account["password_salt"]
@@ -2835,7 +2858,8 @@ class TimingHandler(SimpleHTTPRequestHandler):
                     "WHERE race_id = ? AND assignment = ?",
                     (race_id, assignment),
                 ).fetchone()
-                if occupied and occupied["device_id"] != device_id:
+                shared_finish = is_nanxi_race_id(race_id) and assignment == "END"
+                if not shared_finish and occupied and occupied["device_id"] != device_id:
                     self.send_json(
                         {"ok": False, "error": "This role is already bound to another device", "binding": row_to_dict(occupied)},
                         HTTPStatus.CONFLICT,

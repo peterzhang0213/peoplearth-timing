@@ -162,14 +162,87 @@ class NanxiTests(unittest.TestCase):
                 })
                 self.assertEqual(result['binding']['assignment'], assignment)
             self.assert_post_error('/api/device-bindings', {
-                'raceId': race_id, 'deviceId': 'other-phone', 'assignment': 'END',
+                'raceId': race_id, 'deviceId': 'other-phone', 'assignment': 'STATION_2_START',
+            }, 409)
+            for phone in ('finish-phone-2', 'finish-phone-3'):
+                self.assertEqual(self.request_json('/api/device-bindings', {
+                    'raceId': race_id, 'deviceId': phone, 'assignment': 'END',
+                })['binding']['assignment'], 'END')
+            self.assert_post_error('/api/device-bindings', {
+                'raceId': race_id, 'deviceId': 'finish-phone-2', 'assignment': 'START',
             }, 409)
             bindings = self.request_json('/api/device-bindings?raceId=' + race_id)['bindings']
-            self.assertEqual(len(bindings), 9)
+            self.assertEqual(len(bindings), 11)
         self.request_json('/api/device-bindings/unbind', {
             'raceId': 'nanxi-race-20260919', 'deviceId': 'phone-8', 'adminCode': 'test-clear-code-1234',
         })
-        self.assertEqual(len(self.request_json('/api/device-bindings?raceId=nanxi-race-20260920')['bindings']), 9)
+        day19 = self.request_json('/api/device-bindings?raceId=nanxi-race-20260919')['bindings']
+        self.assertEqual(len([b for b in day19 if b['assignment'] == 'END']), 2)
+        self.assertEqual(len(self.request_json('/api/device-bindings?raceId=nanxi-race-20260920')['bindings']), 11)
+
+    def test_role_login_supports_custom_usernames_and_enforces_station_scope(self):
+        race = 'nanxi-race-20260919'
+        for role, username, password in [('start', 'station_0', 'start-qa-password'),
+                                         ('station_8', 'finish_desk', 'finish-qa-password')]:
+            self.request_json('/api/judge-station-accounts', {
+                'raceId': race, 'role': role, 'username': username, 'password': password,
+                'adminCode': 'test-clear-code-1234',
+            })
+            auth = self.request_json('/api/judge-auth', {'raceId': race, 'role': role, 'password': password})
+            self.assertEqual(auth['role'], role)
+            self.assertEqual(auth['allowedCheckpoints'], ['START'] if role == 'start' else ['END'])
+            self.assert_post_error('/api/judge-auth', {'raceId': race, 'role': role, 'password': 'wrong-password'}, 403)
+        entry = self.register('A-090')
+        self.assert_post_error('/api/manual-checkpoints', {
+            'raceId': race, 'participantId': entry['id'], 'stationId': 'STATION_2_START',
+            'eventTime': '2026-09-19T01:05:00Z', 'deviceId': 'finish-manual', 'judgeToken': auth['judgeToken'],
+        }, 403)
+
+    def test_many_finish_readers_accept_each_entry_once_with_member_bibs(self):
+        for day, category in ((19, 'C'), (20, 'F')):
+            race = f'nanxi-race-202609{day}'
+            entries = []
+            for i in range(4):
+                bibs = [f'{category}-QA-{i}-1', f'{category}-QA-{i}-2']
+                entry = self.request_json('/api/participants', {
+                    'raceId': race, 'categoryCode': category, 'bibNumber': bibs[0],
+                    'memberBibNumbers': bibs, 'cardCode': f'FINISH-QA-{day}-{i}',
+                    'athleteName': '完赛测试队', 'entryType': 'doubles',
+                    'memberNames': ['测试甲', '测试乙'], 'femaleCount': 0,
+                })['participant']
+                entries.append(entry)
+                for index in range(8):
+                    self.assertEqual(self.checkpoint(entry, index)['status'], 'accepted')
+            def finish(task):
+                entry, method, reader = task
+                event = {'raceId': race, 'stationId': 'END', 'deviceId': reader,
+                         'eventTime': '2026-09-19T00:40:00Z', 'timingMode': 'manual'}
+                try:
+                    if method == 'manual':
+                        result = self.request_json('/api/manual-checkpoints', {
+                            **event, 'participantId': entry['id'], 'adminCode': 'test-clear-code-1234'})
+                    else:
+                        result = self.request_json('/api/timing-events', {
+                            **event, 'cardCode': entry['card_code'], 'eventId': f"finish-{day}-{entry['id']}-{reader}"})
+                    return entry['id'], result['status']
+                except HTTPError as error:
+                    # Manual confirmation reports a rejected duplicate as 409.
+                    if error.code != 409: raise
+                    return entry['id'], 'duplicate'
+            tasks = [(entry, method, f'finish-{n}') for entry in entries
+                     for n, method in enumerate(('nfc', 'nfc', 'manual'))]
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+                outcomes = list(pool.map(finish, tasks))
+            for entry in entries:
+                self.assertEqual(sum(pid == entry['id'] and status == 'accepted' for pid, status in outcomes), 1)
+            rows = self.request_json('/api/leaderboard?raceId=' + race)['leaderboard']
+            self.assertEqual(len(rows), 4)
+            for row in rows:
+                self.assertEqual(row['status'], 'finished')
+                self.assertEqual(row['elapsedMs'], 2400000)
+                self.assertEqual(len(row['memberBibNumbers']), 2)
+            events = self.request_json('/api/timing-events?raceId=' + race + '&limit=500')['events']
+            self.assertEqual(sum(e['station_id'] == 'END' and e['status'] == 'accepted' for e in events), 4)
 
     def test_selected_category_and_member_bibs_are_saved_and_queryable(self):
         result = self.request_json('/api/participants', {

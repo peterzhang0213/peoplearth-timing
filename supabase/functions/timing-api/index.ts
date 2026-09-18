@@ -1296,7 +1296,9 @@ async function handlePost(route: string, request: Request): Promise<Response> {
       return jsonResponse({ ok: false, error: "Judge authorization is not configured" }, 503);
     }
     const raceId = String(payload.raceId || "").trim();
-    const username = String(payload.username || "").trim().toLowerCase();
+    const requestedRole = String(payload.role || "").trim().toLowerCase();
+    if (requestedRole && requestedRole !== "admin" && !JUDGE_ROLES.includes(requestedRole)) throw new Error("Invalid judge role");
+    const username = requestedRole === "admin" ? "admin" : String(payload.username || "").trim().toLowerCase();
     const password = String(payload.password || "");
     let role = "admin";
     let displayName = "管理员";
@@ -1306,10 +1308,12 @@ async function handlePost(route: string, request: Request): Promise<Response> {
       }
       role = "admin";
       displayName = "全局管理员";
-    } else if (username) {
+    } else if (requestedRole || username) {
       if (!raceId) throw new Error("raceId is required for a station account");
       const rows = await databaseRequest("judge_station_accounts", {
-        query: { select: "*", race_id: `eq.${raceId}`, username: `eq.${username}`, active: "eq.true", limit: "1" },
+        query: { select: "*", race_id: `eq.${raceId}`,
+          ...(requestedRole ? {role: `eq.${requestedRole}`} : {username: `eq.${username}`}),
+          active: "eq.true", limit: "1" },
       });
       const account = rows[0];
       if (!account) return jsonResponse({ ok: false, error: "Invalid judge account or password" }, 403);
@@ -3044,7 +3048,8 @@ async function handlePost(route: string, request: Request): Promise<Response> {
         limit: "1",
       },
     });
-    if (occupied[0] && occupied[0].device_id !== deviceId) {
+    const sharedFinish = Boolean(NANXI_RACES[raceId]) && assignment === "END";
+    if (!sharedFinish && occupied[0] && occupied[0].device_id !== deviceId) {
       return jsonResponse({
         ok: false,
         error: "This role is already bound to another device",

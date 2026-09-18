@@ -1995,7 +1995,7 @@
       elements.authSubmitButton.disabled = true;
       elements.authError.textContent = "正在验证...";
       try {
-        const authPayload = { raceId, username, password: adminCode };
+        const authPayload = { raceId, role: username, password: adminCode };
         const auth = await readJson(await window.timingApiFetch("/api/judge-auth", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

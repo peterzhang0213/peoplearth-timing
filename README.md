@@ -100,6 +100,14 @@ using either NFC or manual input; an unconfirmed station cannot simply be skippe
 Only NFC stations need a reader binding. Device bindings are separate for September
 19 and 20; stop scanning before switching race dates. To change stations within a
 race, first unbind the reader with the administrator password.
+Nanxi's final checkpoint (`END`) supports several phones at once; other checkpoints
+keep one reader each. Apply `20260919020000_nanxi_shared_finish_readers.sql` before
+deploying this behavior. Simultaneous NFC/manual confirmations of the same entry
+produce only one accepted finish, while different entries can finish concurrently.
+The judge login selects a role independently of its account username (including
+the `station_0` start account). An iPhone uses the same role's manual confirmation;
+it does not need an NFC reader binding. Either member's registered bib, or the
+team query bib, opens the same doubles finish card once the team has finished.
 Manual confirmation and NFC taps use the same participant/station lock: whichever
 arrives first is accepted, and the other path is rejected as a duplicate or wrong
 progress. The Nanxi binding panel also accepts a CSV with
