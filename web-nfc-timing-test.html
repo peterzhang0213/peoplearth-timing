@@ -665,6 +665,10 @@
       }
     }
     body.nanxi .brand-logo { width:180px; height:auto; object-fit:contain; }
+    body.embedded { background:#0a0a08; }
+    body.embedded .topbar { display:none; }
+    body.embedded main { max-width:none; padding:12px; }
+    body.embedded .history { margin-bottom:0; }
   </style>
 </head>
 <body>
@@ -835,6 +839,8 @@
   <script src="./timing-api.js"></script>
   <script src="./nanxi.js"></script>
   <script>
+    const embeddedMode = new URLSearchParams(window.location.search).get("embedded") === "1";
+    if (embeddedMode) document.body.classList.add("embedded");
     const elements = {
       clearButton: document.querySelector("#clearButton"),
       deviceId: document.querySelector("#deviceId"),

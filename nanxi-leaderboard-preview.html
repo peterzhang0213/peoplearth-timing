@@ -72,7 +72,7 @@
     <div class="brand"><img src="./assets/nanxi-main-visual-cropped.svg" alt="Nanxi主视觉"></div>
     <section class="heading">
       <div><h1 id="title">男子单人</h1></div>
-      <div class="day-switch"><button class="active" data-day="19">Mock · 19日</button><button data-day="20">Mock · 20日</button></div>
+      <div class="day-switch"><button class="active" data-day="19">9 月 19 日</button><button data-day="20">9 月 20 日</button></div>
     </section>
     <div class="group-switch" id="groups"></div>
     <section class="board" aria-label="排行榜">
@@ -89,8 +89,7 @@
     let group = params.get('group') === 'all' || N.codes(day).includes(params.get('group')) ? (params.get('group') || 'all') : 'all';
     let payload = null, version = 0, loading = false, controller = null;
     const labels = {finished:'已完赛',racing:'比赛中',not_started:'未开始',paused:'暂停',dnf:'退赛',dns:'未出发'};
-    document.querySelector('.day-switch').hidden = !demo;
-    if (!demo) document.querySelector('.day-switch').style.display = 'none';
+    document.querySelector('.day-switch').hidden = false;
     function controls() {
       $('#title').textContent = group === 'all' ? '全部组别' : N.groups[group].label;
       $('#groups').innerHTML = [`<button class="${group==='all'?'active':''}" aria-pressed="${group==='all'}" data-group="all">全部组别</button>`, ...N.codes(day).map(code=>`<button class="${code===group?'active':''}" aria-pressed="${code===group}" data-group="${code}">${N.groups[code].label}</button>`)].join('');
