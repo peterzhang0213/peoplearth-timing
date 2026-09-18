@@ -11,6 +11,7 @@ CATEGORIES = {
     "F": ("双人接力", "doubles", 2, None),
     "G": ("四人接力", "team", 4, None),
 }
+CONFIRMED_MEN_SINGLES = {f"C-{number:03d}" for number in range(15, 21)}
 
 
 def registration(payload, entry):
@@ -21,7 +22,10 @@ def registration(payload, entry):
     if not re.fullmatch(r"[A-Z0-9][A-Z0-9_-]{0,19}", bib):
         raise ValueError("请填写 1–20 位选手号或队伍查询号（字母、数字、横线）")
     # Legacy clients may omit categoryCode; an explicit selection always wins.
-    category = str(payload.get("categoryCode") or (bib[0] if re.fullmatch(r"[A-G]-[0-9]{3}", bib) else "")).upper()
+    legacy_category = "A" if bib in CONFIRMED_MEN_SINGLES else (
+        bib[0] if re.fullmatch(r"[A-G]-[0-9]{3}", bib) else ""
+    )
+    category = str(payload.get("categoryCode") or legacy_category).upper()
     if category not in CATEGORIES or category not in RACES[race_id]:
         raise ValueError("请选择该比赛日期的组别：19 日 A–E，20 日 F/G")
     label, entry_type, members, female_count = CATEGORIES[category]

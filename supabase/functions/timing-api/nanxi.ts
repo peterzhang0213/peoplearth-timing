@@ -7,12 +7,18 @@ export const NANXI_CATEGORIES: Record<string, [string, string, number, number | 
   E: ["混合双人", "doubles", 2, 1], F: ["双人接力", "doubles", 2, null],
   G: ["四人接力", "team", 4, null],
 };
+const NANXI_CONFIRMED_MEN_SINGLES = new Set(["C-015", "C-016", "C-017", "C-018", "C-019", "C-020"]);
 export function nanxiRegistration(payload: Record<string, unknown>, entry: {entryType: string; memberNames: string[]}) {
   const raceId = String(payload.raceId || "");
   if (!NANXI_RACES[raceId]) return {};
   const bib = String(payload.bibNumber || "").trim().toUpperCase();
   if (!/^[A-Z0-9][A-Z0-9_-]{0,19}$/.test(bib)) throw new Error("请填写 1–20 位选手号或队伍查询号（字母、数字、横线）");
-  const category = String(payload.categoryCode || (/^[A-G]-[0-9]{3}$/.test(bib) ? bib[0] : "")).toUpperCase();
+  // Older admin pages did not send categoryCode. Preserve the organizer's
+  // confirmed exception so C-015…C-020 can still be registered as singles.
+  const legacyCategory = NANXI_CONFIRMED_MEN_SINGLES.has(bib)
+    ? "A"
+    : (/^[A-G]-[0-9]{3}$/.test(bib) ? bib[0] : "");
+  const category = String(payload.categoryCode || legacyCategory).toUpperCase();
   if (!NANXI_CATEGORIES[category] || !NANXI_RACES[raceId].includes(category)) throw new Error("请选择该比赛日期的组别：19 日 A–E，20 日 F/G");
   const [label, type, members, defaultFemales] = NANXI_CATEGORIES[category];
   if (entry.entryType !== type || entry.memberNames.length !== members) throw new Error(`${label}需要 ${members} 位成员，参赛类型为 ${type}`);

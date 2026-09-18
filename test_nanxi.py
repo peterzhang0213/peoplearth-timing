@@ -225,6 +225,15 @@ class NanxiTests(unittest.TestCase):
             self.assertEqual(by_bib[bib]['categoryCode'], 'C')
             self.assertEqual(by_bib[bib]['entryType'], 'doubles')
 
+    def test_legacy_binding_without_category_accepts_confirmed_c_mens_singles(self):
+        entry = self.request_json('/api/participants', {
+            'raceId': 'nanxi-race-20260919', 'bibNumber': 'C-015',
+            'cardCode': 'LEGACY-C-015', 'athleteName': '旧页面男单',
+            'entryType': 'individual', 'memberNames': ['旧页面男单'],
+        })['participant']
+        self.assertEqual(entry['category_code'], 'A')
+        self.assertEqual(entry['female_count'], 0)
+
     def test_day19_doubles_name_is_optional_and_day20_relay_name_is_required(self):
         for category in 'CDE':
             payload = {
