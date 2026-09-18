@@ -475,9 +475,9 @@ function defaultRaceProfile(raceId: string): DatabaseRow {
       race_id: raceId,
       name: NANXI_RACES[raceId] ? `Nanxi · 9 月 ${raceId.slice(-2)} 日` : raceId,
       mode: "station_checkpoints",
-      station_count: NANXI_RACES[raceId] ? 8 : 5,
+      station_count: NANXI_RACES[raceId] ? (raceId.endsWith("20260920") ? 7 : 8) : 5,
       start_group_size: 1,
-      checkpoints: buildStationBoundaryCheckpoints(NANXI_RACES[raceId] ? 8 : 5),
+      checkpoints: buildStationBoundaryCheckpoints(NANXI_RACES[raceId] ? (raceId.endsWith("20260920") ? 7 : 8) : 5),
       entry_type: NANXI_RACES[raceId] ? "individual" : "team",
       status: "active",
       finalized_at: null,
@@ -1327,6 +1327,9 @@ async function handlePost(route: string, request: Request): Promise<Response> {
       return jsonResponse({ ok: false, error: "Invalid administrator code" }, 403);
     }
     const profile = raceId ? await ensureRaceProfile(raceId) : null;
+    if (profile && role !== "admin" && !judgeRoleCheckpoints(profile, role).length) {
+      return jsonResponse({ ok: false, error: "This station is not part of the current course" }, 403);
+    }
     return jsonResponse({
       ok: true,
       authenticated: true,
@@ -3020,6 +3023,9 @@ async function handlePost(route: string, request: Request): Promise<Response> {
         { ok: false, status: "race_finalized", error: "This race has ended" },
         409,
       );
+    }
+    if (NANXI_RACES[raceId] && !(profile.checkpoints as string[]).includes(assignment)) {
+      return jsonResponse({ ok: false, error: "This checkpoint is not part of the current course" }, 400);
     }
     const existing = await databaseRequest("device_bindings", {
       query: {

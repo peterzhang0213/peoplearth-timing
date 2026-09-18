@@ -96,7 +96,7 @@
 })();
 </script>
   <script src="./timing-api.js?v=20260919-2" defer></script>
-  <script src="./nanxi.js?v=20260919-3" defer></script>
+  <script src="./nanxi.js?v=20260919-4" defer></script>
   <script>
     window.addEventListener('DOMContentLoaded', () => {
       if (!window.Nanxi || !window.timingApiFetch) return;
@@ -113,7 +113,7 @@
     function formatDuration(ms) { if (ms == null || !Number.isFinite(Number(ms))) return "--:--:--"; const total=Math.max(0,Math.round(Number(ms)/1000)); return [Math.floor(total/3600),Math.floor(total/60)%60,total%60].map(v=>String(v).padStart(2,"0")).join(":"); }
     function formatDate(value) { if (!value) return "--"; const date=new Date(value); return Number.isNaN(date.getTime()) ? "--" : date.toLocaleString("zh-CN",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}); }
     function showMessage(text,error=false) { $("#message").textContent=text; $("#message").classList.toggle("error",error); }
-    function render(row, day, isDemo) {
+    function render(row, day, isDemo, stationCount = Nanxi.stationCountForDay(day)) {
       lastRow = row;
       lastDay = day;
       const members = Array.isArray(row.memberNames) && row.memberNames.length ? row.memberNames : [row.athleteName];
@@ -127,7 +127,7 @@
       const adjustment = Number(row.adjustmentMs || 0) - Number(row.deductionMs || 0);
       $("#adjustment").textContent = adjustment === 0 ? "00:00" : `${adjustment > 0 ? "+" : "−"}${formatDuration(Math.abs(adjustment)).slice(3)}`;
       const splits = row.stationSplits || {};
-      $("#splitGrid").innerHTML = Array.from({length:Object.keys(row.stationSplits || {}).filter(key=>/^station[0-9]+Ms$/.test(key)).length || 9},(_,i)=>`<div class="split"><b>S${i+1}</b><span>${formatDuration(splits[`station${i+1}Ms`]).slice(3)}</span></div>`).join("");
+      $("#splitGrid").innerHTML = Array.from({length:stationCount},(_,i)=>`<div class="split"><b>S${i+1}</b><span>${formatDuration(splits[`station${i+1}Ms`]).slice(3)}</span></div>`).join("");
       $("#stamp").textContent = `${row.categoryRank ? `组别排名：第 ${row.categoryRank} 名 · ` : ""}状态：${row.status === "finished" ? "已完赛" : row.status === "racing" ? "比赛中" : "暂无完赛时间"} · 生成于 ${formatDate(new Date().toISOString())}`;
       $("#presentationLabel").textContent = `${isDemo ? "演示成绩 · " : ""}9 月 ${day} 日 · 总成绩`;
       $("#presentationName").textContent = row.athleteName || "未命名队伍";
@@ -197,7 +197,7 @@
         const row = payload.leaderboard.find(item => Nanxi.matchesBib(item, bib));
         if (!row) { showMessage(`没有找到 ${bib}，请检查比赛日期或编号。`,true); return; }
         if (row.status !== "finished") { showMessage(`${bib} 尚无完赛成绩，完成比赛后再查询。`,true); return; }
-        render(row, day, false); showMessage("查询成功，可直接用于现场拍照。");
+        render(row, day, false, payload.race?.stationCount || Nanxi.stationCountForDay(day)); showMessage("查询成功，可直接用于现场拍照。");
       } catch (error) {
         if (version === requestVersion) showMessage(error.name === "AbortError" ? "查询超时，请重试。" : "无法连接成绩服务，请检查网络及计时服务是否启动。",true);
       } finally { clearTimeout(timeout); }

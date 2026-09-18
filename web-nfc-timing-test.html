@@ -927,7 +927,7 @@
         const checkpoint = elements.stationId.value;
         const station = checkpoint.match(/^STATION_(\d+)_START$/);
         params.set("role", checkpoint === "START" ? "start" : checkpoint === "END"
-          ? `station_${raceProfile?.stationCount || 8}` : station ? `station_${Number(station[1]) - 1}` : "admin");
+          ? `station_${raceProfile?.stationCount || Nanxi.stationCountForDay(Nanxi.dayForRace(elements.raceId.value.trim()))}` : station ? `station_${Number(station[1]) - 1}` : "admin");
       }
       document.querySelector("#manualJudgeLink").href = `./judge.html?${params}`;
       const url = new URL(location.href);

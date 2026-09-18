@@ -935,7 +935,7 @@
   </div>
 
   <script src="./timing-api.js"></script>
-  <script src="./nanxi.js?v=20260919-3"></script>
+  <script src="./nanxi.js?v=20260919-4"></script>
   <script>
     const accessBackdrop = document.querySelector("#accessBackdrop");
     const accessForm = document.querySelector("#accessForm");
@@ -1053,7 +1053,7 @@
         raceId: "nanxi-template-20260920",
         sessionRaceId: "nanxi-race-20260920",
         name: "Nanxi · 9 月 20 日模板",
-        stationCount: 8,
+        stationCount: 7,
         startGroupSize: 1,
         entryType: "individual",
         mode: "station_checkpoints",
@@ -1680,7 +1680,7 @@
       if (Nanxi.isRace(race.raceId)) {
         const codes = Nanxi.codes(Nanxi.dayForRace(race.raceId));
         const groups = codes.map((code) => Nanxi.groups[code]?.label).filter(Boolean).join(" / ");
-        return `${race.name || race.raceId} · ${groups} · ${race.stationCount || 8} 站`;
+        return `${race.name || race.raceId} · ${groups} · ${race.stationCount || Nanxi.stationCountForDay(Nanxi.dayForRace(race.raceId))} 站`;
       }
       const official = officialRaces.find((item) => item.raceId === race.raceId);
       const category = entryTypeLabel(race.entryType || official?.entryType || "individual");

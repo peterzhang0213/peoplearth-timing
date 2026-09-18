@@ -630,8 +630,8 @@ def default_race_profile(race_id: str) -> dict:
             race_id,
             NANXI_RACE_NAMES[race_id],
             "station_checkpoints",
-            8,
-            checkpoints=build_station_boundary_checkpoints(8),
+            7 if race_id.endswith("20260920") else 8,
+            checkpoints=build_station_boundary_checkpoints(7 if race_id.endswith("20260920") else 8),
             entry_type="individual",
             is_template=True,
         )
@@ -640,8 +640,8 @@ def default_race_profile(race_id: str) -> dict:
             race_id,
             "Nanxi · " + ("9 月 19 日" if race_id.endswith("20260919") else "9 月 20 日"),
             "station_checkpoints",
-            8,
-            checkpoints=build_station_boundary_checkpoints(8),
+            7 if race_id.endswith("20260920") else 8,
+            checkpoints=build_station_boundary_checkpoints(7 if race_id.endswith("20260920") else 8),
             entry_type="individual",
         )
     if race_id in HOKA_BOUNDARY_CHECKPOINT_RACE_IDS:
@@ -710,8 +710,8 @@ def ensure_default_race_profiles(db: sqlite3.Connection) -> None:
             "nanxi-race-20260920",
             "Nanxi · 9 月 20 日",
             "station_checkpoints",
-            8,
-            build_station_boundary_checkpoints(8),
+            7,
+            build_station_boundary_checkpoints(7),
             "individual",
         ),
     ):
@@ -744,6 +744,19 @@ def ensure_default_race_profiles(db: sqlite3.Connection) -> None:
                 profile["updated_at"],
             ),
         )
+
+    # Only migrate the unused original day-20 course; never reinterpret timing history.
+    db.execute("""
+        UPDATE race_profiles SET station_count = 7, checkpoints_json = ?, updated_at = ?
+        WHERE race_id IN ('nanxi-race-20260920', 'nanxi-template-20260920') AND station_count = 8
+          AND NOT EXISTS (SELECT 1 FROM timing_events e WHERE e.race_id = race_profiles.race_id AND e.status = 'accepted')
+          AND NOT EXISTS (SELECT 1 FROM device_bindings d WHERE d.race_id = race_profiles.race_id AND d.assignment = 'STATION_8_START')
+    """, (json.dumps(build_station_boundary_checkpoints(7)), utc_now()))
+    db.execute("""
+        UPDATE judge_station_accounts SET active = 0, updated_at = ?
+        WHERE race_id = 'nanxi-race-20260920' AND role = 'station_8' AND active = 1
+          AND EXISTS (SELECT 1 FROM race_profiles r WHERE r.race_id = judge_station_accounts.race_id AND r.station_count = 7)
+    """, (utc_now(),))
 
     hoka_checkpoints = json.dumps(build_station_boundary_checkpoints(5))
     placeholders = ",".join("?" for _ in HOKA_BOUNDARY_CHECKPOINT_RACE_IDS)
@@ -789,7 +802,8 @@ def ensure_default_judge_station_accounts(db: sqlite3.Connection) -> None:
     """Provision the standard Nanxi station logins without overwriting custom accounts."""
     now = utc_now()
     for race_id in sorted(NANXI_RACE_IDS):
-        for station_number in range(9):
+        count = db.execute("SELECT station_count FROM race_profiles WHERE race_id = ?", (race_id,)).fetchone()[0]
+        for station_number in range(count + 1):
             role = "start" if station_number == 0 else f"station_{station_number}"
             username = f"station_{station_number}"
             password = f"station{station_number}"
@@ -1942,6 +1956,9 @@ class TimingHandler(SimpleHTTPRequestHandler):
                 role = "admin"
                 display_name = "管理员"
                 race_id = race_id or "*"
+            if role != "admin" and not judge_role_checkpoints(get_race_profile(race_id), role):
+                self.send_json({"ok": False, "error": "This station is not part of the current course"}, HTTPStatus.FORBIDDEN)
+                return
             token = issue_judge_token(race_id, role, display_name)
             self.send_json(
                 {
@@ -2830,6 +2847,8 @@ class TimingHandler(SimpleHTTPRequestHandler):
                     HTTPStatus.CONFLICT,
                 )
                 return
+            if is_nanxi_race_id(race_id) and assignment not in profile["checkpoints"]:
+                raise ValueError("This checkpoint is not part of the current course")
             now = utc_now()
             with connect_db() as db:
                 existing = db.execute(

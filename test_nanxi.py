@@ -74,10 +74,10 @@ class NanxiTests(unittest.TestCase):
     def test_relay_deduction_penalty_and_independent_ranks(self):
         entries=[self.register('F-001',0),self.register('F-002',1),self.register('G-001',3),self.register('G-002',4)]
         for entry in entries:
-            for index in range(9): self.checkpoint(entry,index)
+            for index in range(8): self.checkpoint(entry,index)
         self.request_json('/api/result-adjustments',{'raceId':entries[1]['race_id'],'participantId':entries[1]['id'],'adjustmentSeconds':60,'reason':'罚时','adminCode':'test-clear-code-1234'})
         result={row['bibNumber']:row for row in self.request_json('/api/leaderboard?raceId='+entries[0]['race_id'])['leaderboard']}
-        self.assertEqual(result['F-002']['elapsedMs'],2160000)
+        self.assertEqual(result['F-002']['elapsedMs'],1860000)
         self.assertEqual(result['F-002']['deductionMs'],300000)
         self.assertEqual(result['F-002']['penaltyMs'],60000)
         self.assertEqual(result['F-002']['categoryRank'],1)
@@ -105,11 +105,14 @@ class NanxiTests(unittest.TestCase):
 
     def test_both_days_ready_gun_start_and_all_input_combinations(self):
         for day, category in ((19, 'A'), (20, 'F')):
+            count = 7 if day == 20 else 8
             race_id = f'nanxi-race-202609{day}'
             profile = self.request_json('/api/race-config?raceId=' + race_id)['race']
-            self.assertEqual(profile['stationCount'], 8)
-            self.assertEqual(profile['checkpoints'], server.build_station_boundary_checkpoints(8))
+            self.assertEqual(profile['stationCount'], count)
+            self.assertEqual(profile['checkpoints'], server.build_station_boundary_checkpoints(count))
             entries = [self.register(f'{category}-{index:03d}', 0) for index in range(1, 4)]
+            if day == 20:
+                entries.extend(self.register(f'G-{index:03d}', 0) for index in range(1, 4))
             for index, entry in enumerate(entries):
                 ready = self.request_json('/api/start-checkins', {
                     'raceId': race_id, 'cardCode': entry['card_code'],
@@ -125,14 +128,14 @@ class NanxiTests(unittest.TestCase):
                 'startedAt': start_time.isoformat(), 'adminCode': 'test-clear-code-1234',
             })
             # All NFC, all manual, and alternating inputs must have identical splits.
-            for station in range(1, 9):
+            for station in range(1, count + 1):
                 station_id = profile['checkpoints'][station]
                 auth = self.request_json('/api/judge-auth', {
                     'raceId': race_id, 'username': f'station_{station}', 'password': f'station{station}',
                 })
                 self.assertEqual(auth['allowedCheckpoints'], [station_id])
                 for index, entry in enumerate(entries):
-                    manual = index == 1 or (index == 2 and station % 2 == 0)
+                    manual = index % 3 == 1 or (index % 3 == 2 and station % 2 == 0)
                     payload = {
                         'raceId': race_id, 'stationId': station_id, 'timingMode': 'manual',
                         'deviceId': f'station-{station}',
@@ -150,13 +153,14 @@ class NanxiTests(unittest.TestCase):
             results = self.request_json('/api/leaderboard?raceId=' + race_id)['leaderboard']
             for result in results:
                 self.assertEqual(result['status'], 'finished')
-                self.assertEqual(result['elapsedMs'], 2400000)
-                self.assertEqual(list(result['stationSplits'].values()), [300000] * 8)
+                self.assertEqual(result['elapsedMs'], count * 300000)
+                self.assertEqual(list(result['stationSplits'].values()), [300000] * count)
 
     def test_device_bindings_are_independent_by_day_and_manual_needs_no_reader(self):
         for day in (19, 20):
+            count = 7 if day == 20 else 8
             race_id = f'nanxi-race-202609{day}'
-            for index, assignment in enumerate(server.build_station_boundary_checkpoints(8)):
+            for index, assignment in enumerate(server.build_station_boundary_checkpoints(count)):
                 result = self.request_json('/api/device-bindings', {
                     'raceId': race_id, 'deviceId': f'phone-{index}', 'assignment': assignment,
                 })
@@ -172,13 +176,13 @@ class NanxiTests(unittest.TestCase):
                 'raceId': race_id, 'deviceId': 'finish-phone-2', 'assignment': 'START',
             }, 409)
             bindings = self.request_json('/api/device-bindings?raceId=' + race_id)['bindings']
-            self.assertEqual(len(bindings), 11)
+            self.assertEqual(len(bindings), count + 3)
         self.request_json('/api/device-bindings/unbind', {
             'raceId': 'nanxi-race-20260919', 'deviceId': 'phone-8', 'adminCode': 'test-clear-code-1234',
         })
         day19 = self.request_json('/api/device-bindings?raceId=nanxi-race-20260919')['bindings']
         self.assertEqual(len([b for b in day19 if b['assignment'] == 'END']), 2)
-        self.assertEqual(len(self.request_json('/api/device-bindings?raceId=nanxi-race-20260920')['bindings']), 11)
+        self.assertEqual(len(self.request_json('/api/device-bindings?raceId=nanxi-race-20260920')['bindings']), 10)
 
     def test_role_login_supports_custom_usernames_and_enforces_station_scope(self):
         race = 'nanxi-race-20260919'
@@ -200,6 +204,7 @@ class NanxiTests(unittest.TestCase):
 
     def test_many_finish_readers_accept_each_entry_once_with_member_bibs(self):
         for day, category in ((19, 'C'), (20, 'F')):
+            count = 7 if day == 20 else 8
             race = f'nanxi-race-202609{day}'
             entries = []
             for i in range(4):
@@ -211,12 +216,12 @@ class NanxiTests(unittest.TestCase):
                     'memberNames': ['测试甲', '测试乙'], 'femaleCount': 0,
                 })['participant']
                 entries.append(entry)
-                for index in range(8):
+                for index in range(count):
                     self.assertEqual(self.checkpoint(entry, index)['status'], 'accepted')
             def finish(task):
                 entry, method, reader = task
                 event = {'raceId': race, 'stationId': 'END', 'deviceId': reader,
-                         'eventTime': '2026-09-19T00:40:00Z', 'timingMode': 'manual'}
+                         'eventTime': f'2026-09-19T00:{count * 5}:00Z', 'timingMode': 'manual'}
                 try:
                     if method == 'manual':
                         result = self.request_json('/api/manual-checkpoints', {
@@ -239,7 +244,7 @@ class NanxiTests(unittest.TestCase):
             self.assertEqual(len(rows), 4)
             for row in rows:
                 self.assertEqual(row['status'], 'finished')
-                self.assertEqual(row['elapsedMs'], 2400000)
+                self.assertEqual(row['elapsedMs'], count * 300000)
                 self.assertEqual(len(row['memberBibNumbers']), 2)
             events = self.request_json('/api/timing-events?raceId=' + race + '&limit=500')['events']
             self.assertEqual(sum(e['station_id'] == 'END' and e['status'] == 'accepted' for e in events), 4)
@@ -336,6 +341,7 @@ class NanxiTests(unittest.TestCase):
 
     def test_nanxi_station_accounts_are_provisioned_for_both_days(self):
         for race_id in ('nanxi-race-20260919', 'nanxi-race-20260920'):
+            count = 7 if race_id.endswith('20') else 8
             auth = self.request_json('/api/judge-auth', {
                 'raceId': race_id,
                 'username': 'station_1',
@@ -345,10 +351,41 @@ class NanxiTests(unittest.TestCase):
             self.assertEqual(auth['allowedCheckpoints'], ['STATION_2_START'])
             finish = self.request_json('/api/judge-auth', {
                 'raceId': race_id,
-                'username': 'station_8',
-                'password': 'station8',
+                'username': f'station_{count}',
+                'password': f'station{count}',
             })
             self.assertEqual(finish['allowedCheckpoints'], ['END'])
+
+    def test_day20_rejects_removed_station_and_preserves_course_history(self):
+        race = 'nanxi-race-20260920'
+        self.assert_post_error('/api/device-bindings', {
+            'raceId': race, 'deviceId': 'obsolete', 'assignment': 'STATION_8_START',
+        }, 400)
+        self.assert_post_error('/api/judge-auth', {
+            'raceId': race, 'role': 'station_8', 'password': 'station8',
+        }, 403)
+        entry = self.register('G-050', 0)
+        self.checkpoint(entry, 0)
+        self.assert_post_error('/api/timing-events', {
+            'raceId': race, 'stationId': 'STATION_8_START', 'deviceId': 'obsolete',
+            'cardCode': entry['card_code'], 'eventTime': '2026-09-19T00:05:00Z', 'timingMode': 'manual',
+        }, 400)
+        profile = server.get_race_profile(race)
+        profile['station_count'] = 8
+        profile['checkpoints'] = server.build_station_boundary_checkpoints(8)
+        server.save_race_profile(profile)
+        server.init_db()
+        self.assertEqual(server.get_race_profile(race)['station_count'], 8)
+
+    def test_unused_day20_course_is_migrated_without_changing_day19(self):
+        race = 'nanxi-race-20260920'
+        profile = server.get_race_profile(race)
+        profile['station_count'] = 8
+        profile['checkpoints'] = server.build_station_boundary_checkpoints(8)
+        server.save_race_profile(profile)
+        server.init_db()
+        self.assertEqual(server.get_race_profile(race)['station_count'], 7)
+        self.assertEqual(server.get_race_profile('nanxi-race-20260919')['station_count'], 8)
 
     def test_delete_nanxi_test_data_removes_only_generated_records(self):
         test_entry = self.register('A-001', card='NANXI-TEST-A-001')

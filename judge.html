@@ -594,7 +594,7 @@
     ];
     const nanxiRaceCatalog = [
       { raceId: "nanxi-race-20260919", name: "Nanxi · 9 月 19 日", stationCount: 8 },
-      { raceId: "nanxi-race-20260920", name: "Nanxi · 9 月 20 日", stationCount: 8 }
+      { raceId: "nanxi-race-20260920", name: "Nanxi · 9 月 20 日", stationCount: 7 }
     ];
     const primaryRaceIds = new Set(demoRaceSessions.map((race) => race.raceId));
     const judgeRoleOptions = [
@@ -2140,7 +2140,7 @@
       try {
         await loadAuthRaces();
         const requestedRole = String(pageParams.get("role") || "admin").trim().toLowerCase();
-        elements.authUsername.value = judgeRoleOptions.some((option) => option.role === requestedRole)
+        elements.authUsername.value = Array.from(elements.authUsername.options).some((option) => option.value === requestedRole)
           ? requestedRole
           : "admin";
         syncResponsiveSelect(elements.authUsername);
