@@ -81,8 +81,8 @@ through STATION_8_START, then END (station 8 finish). Existing races with accept
 timing events must be reviewed before changing the course. Apply
 `20260918090000_nanxi_eight_stations.sql` after the Nanxi schema migration.
 The venue screen targets a 5 m × 3.5 m (10:7) display, e.g. 2000 × 1400 pixels;
-it shows 20 entries per page in two columns and rotates pages every 15 seconds.
-Use the footer controls to change pages or pause rotation. Mobile shows 10 per page.
+it keeps the original single-column layout and automatically scrolls through the
+full ranking; mobile uses the same single-column flow.
 
 The admin page owns race setup and NFC binding. The judge page owns race starts and
 audited timing decisions. The first phone checkpoint (`START`) only confirms that a
