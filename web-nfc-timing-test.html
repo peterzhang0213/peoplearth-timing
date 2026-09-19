@@ -1895,10 +1895,15 @@
         participantCache = { raceId, rows: payload.participants };
       }
       const row = participantCache.rows.find((participant) => {
+        let memberBibs = participant.member_bib_numbers || participant.memberBibNumbers || [];
+        if (typeof memberBibs === "string") {
+          try { memberBibs = JSON.parse(memberBibs); } catch (error) { memberBibs = [memberBibs]; }
+        }
+        if (!Array.isArray(memberBibs)) memberBibs = [memberBibs];
         const candidates = [
           participant.card_code, participant.cardCode,
           participant.bib_number, participant.bibNumber,
-          ...(participant.member_bib_numbers || participant.memberBibNumbers || [])
+          ...memberBibs
         ];
         return candidates.some((candidate) => String(candidate || "").trim().toUpperCase() === value);
       });
