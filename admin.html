@@ -773,7 +773,7 @@
 
     <section id="judgeAccountConfiguration">
       <h2>裁判台账号</h2>
-      <p>为当前比赛配置起点及各站点独立账号。Nanxi 默认账号为 <code>station_1</code>–<code>station_8</code>，密码对应 <code>station1</code>–<code>station8</code>；密码只保存为不可逆哈希，留空表示沿用原密码。</p>
+      <p>为当前比赛配置起点及各站点独立账号。Nanxi 七站赛默认账号为 <code>station_1</code>–<code>station_7</code>，密码对应 <code>station1</code>–<code>station7</code>；密码只保存为不可逆哈希，留空表示沿用原密码。</p>
       <div id="judgeAccountsRows" class="grid"></div>
       <div class="actions">
         <button id="saveJudgeAccountsButton" type="button">保存裁判账号</button>
@@ -935,7 +935,7 @@
   </div>
 
   <script src="./timing-api.js"></script>
-  <script src="./nanxi.js?v=20260919-4"></script>
+  <script src="./nanxi.js?v=20260919-5"></script>
   <script>
     const accessBackdrop = document.querySelector("#accessBackdrop");
     const accessForm = document.querySelector("#accessForm");
@@ -1042,7 +1042,7 @@
         raceId: "nanxi-template-20260919",
         sessionRaceId: "nanxi-race-20260919",
         name: "Nanxi · 9 月 19 日模板",
-        stationCount: 8,
+        stationCount: 7,
         startGroupSize: 1,
         entryType: "individual",
         mode: "station_checkpoints",

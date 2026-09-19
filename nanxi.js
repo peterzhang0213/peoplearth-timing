@@ -11,7 +11,7 @@
     G: {label: "四人接力", type: "team", size: 4, day: "20"},
   };
   const codes = day => day === "20" ? ["F", "G"] : ["A", "B", "C", "D", "E"];
-  const stationCountForDay = day => String(day) === "20" ? 7 : 8;
+  const stationCountForDay = () => 7;
   const isRace = id => Object.values(races).includes(id);
   const dayForRace = id => id === races[20] ? "20" : "19";
   const normalizeBib = value => String(value || "").normalize("NFKC").trim().toUpperCase().replace(/[‐‑–—−]/g, "-").replace(/\s+/g, "");

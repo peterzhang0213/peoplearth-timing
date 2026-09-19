@@ -630,8 +630,8 @@ def default_race_profile(race_id: str) -> dict:
             race_id,
             NANXI_RACE_NAMES[race_id],
             "station_checkpoints",
-            7 if race_id.endswith("20260920") else 8,
-            checkpoints=build_station_boundary_checkpoints(7 if race_id.endswith("20260920") else 8),
+            7,
+            checkpoints=build_station_boundary_checkpoints(7),
             entry_type="individual",
             is_template=True,
         )
@@ -640,8 +640,8 @@ def default_race_profile(race_id: str) -> dict:
             race_id,
             "Nanxi · " + ("9 月 19 日" if race_id.endswith("20260919") else "9 月 20 日"),
             "station_checkpoints",
-            7 if race_id.endswith("20260920") else 8,
-            checkpoints=build_station_boundary_checkpoints(7 if race_id.endswith("20260920") else 8),
+            7,
+            checkpoints=build_station_boundary_checkpoints(7),
             entry_type="individual",
         )
     if race_id in HOKA_BOUNDARY_CHECKPOINT_RACE_IDS:
@@ -702,8 +702,8 @@ def ensure_default_race_profiles(db: sqlite3.Connection) -> None:
             "nanxi-race-20260919",
             "Nanxi · 9 月 19 日",
             "station_checkpoints",
-            8,
-            build_station_boundary_checkpoints(8),
+            7,
+            build_station_boundary_checkpoints(7),
             "individual",
         ),
         (
@@ -745,16 +745,18 @@ def ensure_default_race_profiles(db: sqlite3.Connection) -> None:
             ),
         )
 
-    # Only migrate the unused original day-20 course; never reinterpret timing history.
+    # Reduce both Nanxi days to seven stations. Existing obsolete station-8
+    # events remain as audit history and are ignored by the new profile.
     db.execute("""
         UPDATE race_profiles SET station_count = 7, checkpoints_json = ?, updated_at = ?
-        WHERE race_id IN ('nanxi-race-20260920', 'nanxi-template-20260920') AND station_count = 8
-          AND NOT EXISTS (SELECT 1 FROM timing_events e WHERE e.race_id = race_profiles.race_id AND e.status = 'accepted')
-          AND NOT EXISTS (SELECT 1 FROM device_bindings d WHERE d.race_id = race_profiles.race_id AND d.assignment = 'STATION_8_START')
+        WHERE race_id IN ('nanxi-race-20260919', 'nanxi-race-20260920',
+                          'nanxi-template-20260919', 'nanxi-template-20260920')
+          AND station_count = 8
     """, (json.dumps(build_station_boundary_checkpoints(7)), utc_now()))
     db.execute("""
         UPDATE judge_station_accounts SET active = 0, updated_at = ?
-        WHERE race_id = 'nanxi-race-20260920' AND role = 'station_8' AND active = 1
+        WHERE race_id IN ('nanxi-race-20260919', 'nanxi-race-20260920')
+          AND role = 'station_8' AND active = 1
           AND EXISTS (SELECT 1 FROM race_profiles r WHERE r.race_id = judge_station_accounts.race_id AND r.station_count = 7)
     """, (utc_now(),))
 
