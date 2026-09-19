@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>SRC 手机 NFC 打卡</title>
+  <title>SRC 手机裁判台</title>
   <link rel="icon" type="image/png" sizes="192x192" href="./assets/src-logo.png">
   <link rel="apple-touch-icon" href="./assets/src-logo.png">
   <style>
@@ -262,6 +262,22 @@
       gap: 10px;
       margin-top: 14px;
     }
+
+    .manual-entry {
+      display: grid;
+      gap: 9px;
+      margin-top: 12px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+
+    .manual-entry[hidden] { display: none; }
+    .manual-entry-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+    .manual-entry input { min-width: 0; }
+    .manual-entry button { white-space: nowrap; }
+    .manual-entry small { color: var(--muted); line-height: 1.45; }
 
     button.command {
       min-height: 52px;
@@ -677,7 +693,7 @@
       <div class="brand">
         <img id="brandLogo" src="./assets/src-logo.png" alt="SRC logo">
         <div class="brand-copy">
-          <h1>手机 NFC 打卡</h1>
+          <h1>手机裁判台 · NFC / 手动</h1>
           <div id="deviceMeta" class="device-meta">设备尚未配置</div>
         </div>
       </div>
@@ -710,12 +726,21 @@
       <button id="stopButton" class="command secondary" type="button" disabled>停止</button>
     </div>
 
+    <form id="manualEntry" class="manual-entry" hidden>
+      <label for="manualCardCode">手动输入手环号 / 选手编号</label>
+      <div class="manual-entry-row">
+        <input id="manualCardCode" autocomplete="off" autocapitalize="characters" placeholder="例如 C-015 或手环号" inputmode="text">
+        <button id="manualSubmitButton" class="command secondary" type="submit">手动打卡</button>
+      </div>
+      <small>同一页面可直接切换 NFC 和手动打卡；输入手环号或手环号后，系统会使用当前绑定站点提交一次确认。</small>
+    </form>
+
     <div id="status" class="status" data-tone="info">等待启动。</div>
     <div id="nfcContextHelp" class="status" data-tone="warning" hidden>
       NFC 扫描需要在安卓 Chrome 的独立 HTTPS 页面打开。
       <a id="standaloneLink" target="_blank" rel="noopener">在独立页面打开 NFC ↗</a>
     </div>
-    <p class="settings-note"><a id="manualJudgeLink" target="_blank" rel="noopener" href="./judge.html">打开裁判台手动打卡 ↗</a> · 同一站 NFC 或手动确认一次即可。起点核验后等待统一发枪。</p>
+    <p class="settings-note">同一站 NFC 或手动确认一次即可。起点核验后等待统一发枪。</p>
 
     <details id="settingsPanel">
       <summary>设备设置</summary>
@@ -864,6 +889,9 @@
       heroTitle: document.querySelector("#heroTitle"),
       lastResult: document.querySelector("#lastResult"),
       lastTime: document.querySelector("#lastTime"),
+      manualCardCode: document.querySelector("#manualCardCode"),
+      manualEntry: document.querySelector("#manualEntry"),
+      manualSubmitButton: document.querySelector("#manualSubmitButton"),
       raceId: document.querySelector("#raceId"),
       roleName: document.querySelector("#roleName"),
       scanner: document.querySelector("#scanner"),
@@ -907,6 +935,7 @@
     let wakeLock = null;
     let raceProfile = null;
     let deviceBindings = [];
+    let participantCache = { raceId: "", rows: [] };
     let bindingConfirmed = false;
     let configurationLoading = true;
     let bindingBusy = false;
@@ -922,14 +951,6 @@
     }
 
     function updateNavigation() {
-      const params = new URLSearchParams({ raceId: elements.raceId.value.trim() });
-      if (elements.timingMode.value === "manual" && Nanxi.isRace(elements.raceId.value.trim())) {
-        const checkpoint = elements.stationId.value;
-        const station = checkpoint.match(/^STATION_(\d+)_START$/);
-        params.set("role", checkpoint === "START" ? "start" : checkpoint === "END"
-          ? `station_${raceProfile?.stationCount || Nanxi.stationCountForDay(Nanxi.dayForRace(elements.raceId.value.trim()))}` : station ? `station_${Number(station[1]) - 1}` : "admin");
-      }
-      document.querySelector("#manualJudgeLink").href = `./judge.html?${params}`;
       const url = new URL(location.href);
       url.searchParams.delete("embedded");
       url.searchParams.set("raceId", elements.raceId.value.trim());
@@ -1277,6 +1298,8 @@
       elements.gateRole.disabled = busy || Boolean(ownBinding) || elements.timingMode.value !== "auto";
       elements.bindDeviceButton.disabled = busy || !raceProfile || (!ownBinding && (!deviceId || selectedOccupied));
       elements.startButton.disabled = busy;
+      elements.manualCardCode.disabled = busy || !raceProfile;
+      elements.manualSubmitButton.disabled = busy || !raceProfile;
       elements.bindDeviceButton.classList.toggle("danger", Boolean(ownBinding));
 
       if (ownBinding) {
@@ -1426,6 +1449,7 @@
       elements.deviceMeta.textContent = `${elements.raceId.value.trim() || "No race"} · ${elements.deviceId.value.trim() || "No device"}`;
       elements.startButton.textContent = isStartCheckin ? "开始起点核验" : "开始扫描 NFC";
       elements.testVoiceButton.disabled = !elements.voiceEnabled.checked;
+      elements.manualEntry.hidden = !raceProfile || elements.timingMode.value !== "manual";
       updateNavigation();
       if (!document.body.classList.contains("scanning")) renderReadyState();
       saveSettings();
@@ -1785,20 +1809,20 @@
       elements.eventsBody.prepend(row);
     }
 
-    function queueReading(event) {
-      const cardCode = readCardCode(event.message);
+    function queueCardCode(cardCode, serialNumber = "") {
+      cardCode = String(cardCode || "").trim().toUpperCase();
       if (!cardCode) {
-        setStatus("读到了 NFC，但没有找到卡号文本。", "error");
-        announceVoice("没有读取到卡号，请将卡片移开后重新贴卡");
+        setStatus("请输入手环号或选手编号。", "error");
+        announceVoice("请输入手环号或选手编号");
         showFeedback({
           tone: "error",
           mark: "X",
-          kicker: "读取失败",
-          title: "请重新贴卡",
-          detail: "NFC tag 内没有可读取的文本卡号",
+          kicker: "输入失败",
+          title: "缺少编号",
+          detail: "请输入手环号或选手编号",
           duration: 2400
         });
-        return;
+        return Promise.resolve();
       }
 
       const locationKey = elements.timingMode.value === "auto"
@@ -1814,7 +1838,7 @@
       }
       recentScans.set(duplicateKey, now);
 
-      const payload = buildPayload(cardCode, event.serialNumber);
+      const payload = buildPayload(cardCode, serialNumber);
       scanQueue = scanQueue
         .then(async () => {
           setBusy(cardCode);
@@ -1837,7 +1861,74 @@
             duration: 2800
           });
         });
+      return scanQueue;
     }
+
+    function queueReading(event) {
+      const cardCode = readCardCode(event.message);
+      if (!cardCode) {
+        setStatus("读到了 NFC，但没有找到卡号文本。", "error");
+        announceVoice("没有读取到卡号，请将卡片移开后重新贴卡");
+        showFeedback({
+          tone: "error",
+          mark: "X",
+          kicker: "读取失败",
+          title: "请重新贴卡",
+          detail: "NFC tag 内没有可读取的文本卡号",
+          duration: 2400
+        });
+        return;
+      }
+      queueCardCode(cardCode, event.serialNumber);
+    }
+
+    async function resolveManualCardCode(input) {
+      const value = String(input || "").trim().toUpperCase();
+      if (!value) throw new Error("请输入手环号或选手编号");
+      const raceId = elements.raceId.value.trim();
+      if (participantCache.raceId !== raceId) {
+        const response = await window.timingApiFetch(`/api/participants?raceId=${encodeURIComponent(raceId)}`, { cache: "no-store" });
+        const payload = await readApiResponse(response);
+        if (!response.ok || !payload.ok || !Array.isArray(payload.participants)) {
+          throw new Error(payload.error || `参赛名单读取失败（HTTP ${response.status}）`);
+        }
+        participantCache = { raceId, rows: payload.participants };
+      }
+      const row = participantCache.rows.find((participant) => {
+        const candidates = [
+          participant.card_code, participant.cardCode,
+          participant.bib_number, participant.bibNumber,
+          ...(participant.member_bib_numbers || participant.memberBibNumbers || [])
+        ];
+        return candidates.some((candidate) => String(candidate || "").trim().toUpperCase() === value);
+      });
+      if (!row) throw new Error(`没有找到编号 ${value}`);
+      return String(row.card_code || row.cardCode || "").trim().toUpperCase();
+    }
+
+    elements.manualEntry.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (configurationLoading || !raceProfile) {
+        setStatus("比赛配置尚未就绪，请稍后重试。", "warning");
+        return;
+      }
+      try {
+        validateConfiguration();
+        if (!bindingConfirmed || currentDeviceBinding()?.assignment !== bindingAssignment()) {
+          elements.settingsPanel.open = true;
+          throw new Error("请先在设备设置中点击“绑定本机站点”");
+        }
+        elements.manualSubmitButton.disabled = true;
+        const cardCode = await resolveManualCardCode(elements.manualCardCode.value);
+        elements.manualCardCode.value = "";
+        await queueCardCode(cardCode);
+      } catch (error) {
+        setStatus(`手动打卡失败：${error.message}`, "error");
+        announceVoice(`手动打卡失败，${error.message}`);
+      } finally {
+        elements.manualSubmitButton.disabled = false;
+      }
+    });
 
     async function requestWakeLock() {
       if (!("wakeLock" in navigator) || document.visibilityState !== "visible") return;
