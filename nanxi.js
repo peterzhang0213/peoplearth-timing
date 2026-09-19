@@ -15,6 +15,23 @@
   const isRace = id => Object.values(races).includes(id);
   const dayForRace = id => id === races[20] ? "20" : "19";
   const normalizeBib = value => String(value || "").normalize("NFKC").trim().toUpperCase().replace(/[‐‑–—−]/g, "-").replace(/\s+/g, "");
+  const arrayValue = value => {
+    if (Array.isArray(value)) return value;
+    if (typeof value !== "string" || !value.trim()) return [];
+    try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed : [value]; }
+    catch { return [value]; }
+  };
+  const memberBibNumbers = row => arrayValue(row?.memberBibNumbers ?? row?.member_bib_numbers).map(normalizeBib);
+  const memberRoster = row => {
+    const names = arrayValue(row?.memberNames ?? row?.member_names);
+    const bibs = memberBibNumbers(row);
+    const type = row?.entryType || row?.entry_type;
+    const grouped = type === "doubles" || type === "team" || names.length > 1 || bibs.length > 1;
+    if (!grouped) return [];
+    const count = Math.max(names.length, bibs.length, type === "doubles" ? 2 : 0);
+    return Array.from({length: count}, (_, i) => ({name: names[i] || `成员 ${i + 1}`, bib: bibs[i] || ""}));
+  };
+  const rosterText = row => memberRoster(row).map(member => `${member.bib || "号码待补录"} ${member.name}`).join(" / ");
   const categoryForRow = row => {
     const explicit = String(row?.categoryCode || row?.category_code || "").trim().toUpperCase();
     if (groups[explicit]) return explicit;
@@ -82,5 +99,5 @@
     return payload;
   }
   const resultError = error => error?.name === "AbortError" ? "成绩请求超时" : error instanceof TypeError ? "无法连接成绩服务，请检查网络" : error?.message || "成绩服务暂时不可用";
-  window.Nanxi = {races, groups, codes, stationCountForDay, isRace, dayForRace, normalizeBib, categoryForRow, matchesBib, memberCaption, escape, duration, mock, fetchResults, resultError};
+  window.Nanxi = {races, groups, codes, stationCountForDay, isRace, dayForRace, normalizeBib, memberBibNumbers, memberRoster, rosterText, categoryForRow, matchesBib, memberCaption, escape, duration, mock, fetchResults, resultError};
 })();

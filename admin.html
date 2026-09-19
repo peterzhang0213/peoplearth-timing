@@ -935,7 +935,7 @@
   </div>
 
   <script src="./timing-api.js"></script>
-  <script src="./nanxi.js?v=20260919-5"></script>
+  <script src="./nanxi.js?v=20260920-1"></script>
   <script>
     const accessBackdrop = document.querySelector("#accessBackdrop");
     const accessForm = document.querySelector("#accessForm");
@@ -1882,7 +1882,7 @@
           : [participant.athlete_name];
         const memberSummary = entryType === "individual"
           ? escapeHtml(participant.athlete_name)
-          : escapeHtml(memberNames.join(" / "));
+          : escapeHtml(Nanxi.isRace(raceId) ? Nanxi.rosterText(participant) : memberNames.join(" / "));
         const categoryCode = Nanxi.categoryForRow(participant);
         const category = Nanxi.isRace(raceId) && Nanxi.groups[categoryCode] ? Nanxi.groups[categoryCode] : null;
         return `

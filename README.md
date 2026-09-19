@@ -73,15 +73,17 @@ Bib numbers need not match the division prefix. Legacy `A-001`–`G-999` numbers
 remain readable when the stored category is missing. The public
 pages default to live results; append `?demo=1` only when a mock screen is needed.
 Bind real events explicitly with `?demo=0&race19=EVENT_ID_19&race20=EVENT_ID_20`;
-these are backend event IDs, while the lookup input matches the entry's `bibNumber`.
+these are backend event IDs, while the lookup input matches the entry's `bibNumber`
+or any registered member's `memberBibNumbers`.
 Real queries use `timing-api.js` over HTTP(S), never fall back to mock results, and
 only display a photo card for finished entries. A `file://` page can show demo
 cards offline and provides a link to the local service for real queries.
 
-Nanxi on both September 19 and 20 uses eight stations: START, STATION_2_START
-through STATION_8_START, then END (station 8 finish). Existing races with accepted
-timing events must be reviewed before changing the course. Apply
-`20260918090000_nanxi_eight_stations.sql` after the Nanxi schema migration.
+Nanxi on both September 19 and 20 uses seven timed stations: START, STATION_2_START
+through STATION_7_START, then END (station 7 finish). Sled push and pull share a
+single timed station. The day-specific seven-station migrations supersede the
+earlier eight-station configuration. Existing races with accepted timing events
+must be reviewed before changing the course.
 The venue screen targets a 5 m × 3.5 m (10:7) display, e.g. 2000 × 1400 pixels;
 it keeps the original single-column layout and automatically scrolls through the
 full ranking; mobile uses the same single-column flow.
@@ -95,7 +97,7 @@ The NFC link opens a separate top-level tab: Web NFC cannot scan from an iframe,
 even on an NFC-capable Android phone. Use Android Chrome over HTTPS. Other phones
 can use the judge page for manual confirmation. Both NFC start check-in and
 "人工核验待发" only enter the ready queue; only the judge's gun-start action starts
-the clock. Every one of the eight station finishes must still be confirmed in order,
+the clock. Every one of the seven station finishes must still be confirmed in order,
 using either NFC or manual input; an unconfirmed station cannot simply be skipped.
 Only NFC stations need a reader binding. Device bindings are separate for September
 19 and 20; stop scanning before switching race dates. To change stations within a
@@ -108,6 +110,17 @@ The judge login selects a role independently of its account username (including
 the `station_0` start account). An iPhone uses the same role's manual confirmation;
 it does not need an NFC reader binding. Either member's registered bib, or the
 team query bib, opens the same doubles finish card once the team has finished.
+
+Relay teams may use one physical wristband per member, provided every wristband
+contains exactly the same NDEF text Card Code registered once for that team.
+Hardware serial numbers are recorded for reference and do not identify separate
+participants. Two-person and four-person teams share one start, checkpoint
+sequence, and final result; only the member responsible for the station taps.
+The judge roster and confirmation dialogs show the team name and each member's
+bib and name, without displaying the internal team query bib. Missing member bibs
+are marked for entry and must be completed in registration. NFC feedback and scan
+history include the whole roster; any registered member bib retrieves the team's
+finished result.
 Manual confirmation and NFC taps use the same participant/station lock: whichever
 arrives first is accepted, and the other path is rejected as a duplicate or wrong
 progress. The Nanxi binding panel also accepts a CSV with

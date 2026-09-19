@@ -1061,6 +1061,19 @@ def participant_response(row: sqlite3.Row | dict) -> dict:
     return source
 
 
+def participant_identity(row: sqlite3.Row | dict | None) -> dict:
+    if row is None:
+        return {}
+    participant = participant_response(row)
+    return {
+        "athleteName": participant["athlete_name"],
+        "bibNumber": participant.get("bib_number"),
+        "entryType": participant["entry_type"],
+        "memberNames": participant["member_names"],
+        "memberBibNumbers": participant["member_bib_numbers"],
+    }
+
+
 def validate_nanxi_member_bibs(db, race_id, bib_number, member_bibs, participant_id=None):
     if not is_nanxi_race_id(race_id):
         return
@@ -3234,7 +3247,7 @@ class TimingHandler(SimpleHTTPRequestHandler):
                             "raceId": race_id,
                             "cardCode": card_code,
                             "participantId": participant["id"],
-                            "athleteName": participant["athlete_name"],
+                            **participant_identity(participant),
                             "startedAt": (
                                 start_event["event_time"]
                                 if start_event
@@ -3272,7 +3285,6 @@ class TimingHandler(SimpleHTTPRequestHandler):
                 ).fetchone()
 
             cloud = sync_supabase_record("start_checkins", checkin)
-            participant_payload = participant_response(participant)
             self.send_json(
                 {
                     "ok": True,
@@ -3280,9 +3292,7 @@ class TimingHandler(SimpleHTTPRequestHandler):
                     "raceId": race_id,
                     "cardCode": card_code,
                     "participantId": participant["id"],
-                    "athleteName": participant["athlete_name"],
-                    "entryType": participant_payload["entry_type"],
-                    "memberNames": participant_payload["member_names"],
+                    **participant_identity(participant),
                     "confirmedAt": checkin["confirmed_at"],
                     "receivedAt": now,
                     "storage": {"localSaved": True, "supabaseSaved": cloud["saved"]},
@@ -4993,11 +5003,15 @@ class TimingHandler(SimpleHTTPRequestHandler):
                 (normalized["event_id"],),
             ).fetchone()
             if existing:
+                existing_participant = db.execute(
+                    "SELECT * FROM participants WHERE id = ?", (existing["participant_id"],)
+                ).fetchone()
                 cloud = sync_supabase_record("timing_events", existing)
                 self.send_json(
                     {
                         "ok": True,
                         "status": "duplicate_event_id",
+                        **participant_identity(existing_participant),
                         "serverEventId": existing["id"],
                         "stationId": existing["station_id"],
                         "timingMode": existing["timing_mode"],
@@ -5049,7 +5063,7 @@ class TimingHandler(SimpleHTTPRequestHandler):
                             "ok": True,
                             "status": blocked_status,
                             "cardCode": normalized["card_code"],
-                            "athleteName": participant["athlete_name"],
+                            **participant_identity(participant),
                             "stationId": normalized["station_id"],
                             "receivedAt": normalized["received_at"],
                             "storage": {"localSaved": False, "supabaseSaved": False},
@@ -5243,6 +5257,7 @@ class TimingHandler(SimpleHTTPRequestHandler):
                 ],
                 "athleteName": event["athlete_name"],
                 "bibNumber": event["bib_number"],
+                **participant_identity(participant),
                 "expectedRole": transition.get("expectedRole"),
                 "expectedCheckpoint": transition.get("expectedCheckpoint"),
                 "nextExpectedRole": next_transition[0] if next_transition else None,

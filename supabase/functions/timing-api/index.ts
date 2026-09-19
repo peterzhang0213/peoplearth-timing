@@ -775,6 +775,17 @@ function controlledMillisecondsBetween(
   return Math.max(0, baseMs - excludedMs);
 }
 
+function participantIdentity(participant?: DatabaseRow): JsonObject {
+  if (!participant) return {};
+  return {
+    athleteName: participant.athlete_name,
+    bibNumber: participant.bib_number || null,
+    entryType: participant.entry_type || "individual",
+    memberNames: Array.isArray(participant.member_names) ? participant.member_names : [],
+    memberBibNumbers: participant.member_bib_numbers || [],
+  };
+}
+
 function mergeParticipantDetails(
   events: DatabaseRow[],
   participants: DatabaseRow[],
@@ -1480,7 +1491,7 @@ async function handlePost(route: string, request: Request): Promise<Response> {
         raceId,
         cardCode,
         participantId: participant.id,
-        athleteName: participant.athlete_name,
+        ...participantIdentity(participant),
         startedAt: startEvents[0]?.event_time || manualResults[0]?.created_at || null,
         receivedAt: new Date().toISOString(),
       });
@@ -1516,10 +1527,7 @@ async function handlePost(route: string, request: Request): Promise<Response> {
       raceId,
       cardCode,
       participantId: participant.id,
-      athleteName: participant.athlete_name,
-      entryType: participant.entry_type || "individual",
-      memberNames: Array.isArray(participant.member_names) ? participant.member_names : [],
-      memberBibNumbers: participant.member_bib_numbers || [],
+      ...participantIdentity(participant),
       categoryCode: participant.category_code || null,
       confirmedAt: rows[0].confirmed_at,
       receivedAt: now,
@@ -3129,16 +3137,18 @@ async function handlePost(route: string, request: Request): Promise<Response> {
       );
     }
     const cardCode = String(payload.cardCode || "").trim().toUpperCase();
+    let participant: DatabaseRow | undefined;
     if (cardCode) {
       const participants = await databaseRequest("participants", {
         query: {
-          select: "id,athlete_name",
+          select: "id,athlete_name,bib_number,entry_type,member_names,member_bib_numbers",
           race_id: `eq.${raceId}`,
           card_code: `eq.${cardCode}`,
           limit: "1",
         },
       });
-      if (participants[0]) {
+      participant = participants[0];
+      if (participant) {
         const [manualResults, controls] = await Promise.all([
           databaseRequest("manual_results", {
             query: {
@@ -3170,7 +3180,7 @@ async function handlePost(route: string, request: Request): Promise<Response> {
             ok: true,
             status: blockedStatus,
             cardCode,
-            athleteName: participants[0].athlete_name,
+            ...participantIdentity(participant),
             stationId: String(payload.stationId || ""),
             receivedAt: new Date().toISOString(),
             storage: { localSaved: false, supabaseSaved: false, primary: storageProviderName() },
@@ -3183,7 +3193,15 @@ async function handlePost(route: string, request: Request): Promise<Response> {
       method: "POST",
       body: { p_payload: NANXI_RACES[raceId] ? {...payload, source: "web-nfc-gate", participantId: null} : payload },
     });
-    return jsonResponse(result, result.status === "duplicate_event_id" ? 200 : 201);
+    // Use the participant attached to the stored event for idempotent retries.
+    const eventParticipantId = result.event?.participant_id;
+    if (eventParticipantId && Number(eventParticipantId) !== Number(participant?.id)) {
+      const rows = await databaseRequest("participants", {
+        query: { select: "*", race_id: `eq.${raceId}`, id: `eq.${eventParticipantId}`, limit: "1" },
+      });
+      participant = rows[0];
+    }
+    return jsonResponse({ ...result, ...participantIdentity(participant) }, result.status === "duplicate_event_id" ? 200 : 201);
   }
 
   return jsonResponse({ ok: false, error: "Not found" }, 404);

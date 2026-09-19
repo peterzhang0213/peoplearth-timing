@@ -245,8 +245,8 @@
       margin-top: 4px;
       overflow: hidden;
       font-size: 18px;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
 
     .last-time {
@@ -649,6 +649,12 @@
       line-height: 1.35;
     }
 
+    .feedback-bibs {
+      color: rgb(255 255 255 / 88%);
+      overflow-wrap: anywhere;
+      font: 800 18px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
     @media (max-width: 640px) {
       main {
         padding-right: 12px;
@@ -732,7 +738,7 @@
         <input id="manualCardCode" autocomplete="off" autocapitalize="characters" placeholder="例如 C-015 或手环号" inputmode="text">
         <button id="manualSubmitButton" class="command secondary" type="submit">手动打卡</button>
       </div>
-      <small>同一页面可直接切换 NFC 和手动打卡；输入手环号或手环号后，系统会使用当前绑定站点提交一次确认。</small>
+      <small>同一页面可直接切换 NFC 和手动打卡；输入手环号或任意成员号码牌后，系统会使用当前绑定站点提交一次确认。</small>
     </form>
 
     <div id="status" class="status" data-tone="info">等待启动。</div>
@@ -846,6 +852,7 @@
       <div id="feedbackMark" class="feedback-mark">OK</div>
       <div id="feedbackKicker" class="feedback-kicker">打卡成功</div>
       <h2 id="feedbackTitle">-</h2>
+      <div id="feedbackBibs" class="feedback-bibs" hidden></div>
       <p id="feedbackDetail">-</p>
     </div>
   </div>
@@ -867,7 +874,7 @@
   </div>
 
   <script src="./timing-api.js"></script>
-  <script src="./nanxi.js"></script>
+  <script src="./nanxi.js?v=20260920-1"></script>
   <script>
     const embeddedMode = new URLSearchParams(window.location.search).get("embedded") === "1";
     if (embeddedMode) document.body.classList.add("embedded");
@@ -879,6 +886,7 @@
       eventsBody: document.querySelector("#eventsBody"),
       feedback: document.querySelector("#feedback"),
       feedbackDetail: document.querySelector("#feedbackDetail"),
+      feedbackBibs: document.querySelector("#feedbackBibs"),
       feedbackKicker: document.querySelector("#feedbackKicker"),
       feedbackMark: document.querySelector("#feedbackMark"),
       feedbackTitle: document.querySelector("#feedbackTitle"),
@@ -1670,13 +1678,15 @@
       navigator.vibrate(tone === "success" ? [90, 60, 90] : tone === "warning" ? [140] : [280]);
     }
 
-    function showFeedback({ tone, mark, kicker, title, detail, duration = 1500 }) {
+    function showFeedback({ tone, mark, kicker, title, detail, bibText = "", duration = 1500 }) {
       window.clearTimeout(feedbackTimer);
       elements.feedback.dataset.tone = tone;
       elements.feedbackMark.textContent = mark;
       elements.feedbackKicker.textContent = kicker;
       elements.feedbackTitle.textContent = title;
       elements.feedbackDetail.textContent = detail;
+      elements.feedbackBibs.textContent = bibText;
+      elements.feedbackBibs.hidden = !bibText;
       elements.feedback.setAttribute("aria-hidden", "false");
       elements.feedback.classList.add("show");
       playTone(tone);
@@ -1732,10 +1742,17 @@
       return "刷卡失败，请联系工作人员";
     }
 
+    function responseBibText(response) {
+      const roster = Nanxi.rosterText(response);
+      const bib = response.bibNumber || response.event?.bib_number;
+      return roster ? `全队号码牌：${roster}` : bib ? `号码牌：${bib}` : "";
+    }
+
     function handleResponse(response, payload) {
       const status = response.status || "uploaded";
       const tone = responseTone(status);
       const athlete = response.athleteName || response.event?.athlete_name || payload.cardCode;
+      const bibText = responseBibText(response);
       const stationId = response.stationId || response.event?.station_id || payload.stationId;
       const checkpoint = checkpointLabel(stationId);
       let feedback = {
@@ -1744,6 +1761,7 @@
         kicker: responseLabel(status),
         title: athlete,
         detail: checkpoint,
+        bibText,
         duration: tone === "error" ? 2400 : 1600
       };
 
@@ -1776,8 +1794,9 @@
         feedback.detail = "该选手已经出发，无需再次核验";
       }
 
-      elements.lastResult.textContent = `${athlete} · ${feedback.detail}`;
+      elements.lastResult.textContent = [athlete, bibText, feedback.detail].filter(Boolean).join(" · ");
       elements.lastTime.textContent = new Date().toLocaleTimeString([], { hour12: false });
+      if (bibText) feedback.duration = Math.max(feedback.duration, 3000);
       elements.scanner.dataset.tone = tone === "warning" ? "busy" : tone;
       setStatus(`${responseLabel(status)}：${athlete} · ${feedback.detail}`, tone);
       showFeedback(feedback);
@@ -1801,9 +1820,10 @@
     function addRow(payload, response, tone) {
       const row = document.createElement("tr");
       const athlete = response.athleteName || response.event?.athlete_name || payload.cardCode;
+      const bibText = responseBibText(response);
       const stationId = response.stationId || response.event?.station_id || payload.stationId;
       addCell(row, new Date(payload.eventTime).toLocaleTimeString([], { hour12: false }), "mono");
-      addCell(row, athlete);
+      addCell(row, [bibText, athlete].filter(Boolean).join(" · "));
       addCell(row, checkpointLabel(stationId));
       addCell(row, responseLabel(response.status || "uploaded"), `result-status ${tone}`);
       elements.eventsBody.prepend(row);

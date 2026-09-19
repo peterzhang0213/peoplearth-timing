@@ -34,6 +34,74 @@ class NanxiTests(unittest.TestCase):
             return self.request_json('/api/manual-checkpoints', {**payload, 'participantId':entry['id'], 'adminCode':'test-clear-code-1234'})
         return self.request_json('/api/timing-events', {**payload, 'cardCode':entry['card_code'], 'eventId':f"{entry['id']}-{entry['card_code']}-{index}-{seconds}"})
 
+    def test_relay_roster_survives_checkin_queue_and_every_scan_response(self):
+        race_id = 'nanxi-race-20260920'
+        for category, size in [('F', 2), ('G', 4)]:
+            bibs = [f'{category}-{i+1:03d}' for i in range(size)]
+            names = [f'成员{i+1}' for i in range(size)]
+            entry = self.request_json('/api/participants', {
+                'raceId': race_id, 'categoryCode': category, 'bibNumber': category+'-TEAM',
+                'cardCode': 'RELAY-'+category, 'entryType': 'doubles' if size == 2 else 'team',
+                'athleteName': '接力队'+category, 'memberNames': names,
+                'memberBibNumbers': bibs, 'femaleCount': 0,
+            })['participant']
+            checkin = {'raceId': race_id, 'cardCode': entry['card_code'], 'deviceId': 'start-reader'}
+            ready = self.request_json('/api/start-checkins', checkin)
+            queue = self.request_json('/api/start-queue?raceId='+race_id)['entries']
+            row = next(row for row in queue if row['participantId'] == entry['id'])
+            self.assertEqual(ready['memberBibNumbers'], bibs)
+            self.assertEqual(row['memberBibNumbers'], bibs)
+            accepted = self.checkpoint(entry, 0)
+            retry = self.checkpoint(entry, 0)
+            started = self.request_json('/api/start-checkins', checkin)
+            self.assertEqual([accepted['status'], retry['status'], started['status']],
+                             ['accepted', 'duplicate_event_id', 'already_started'])
+            for result in [ready, accepted, retry, started]:
+                self.assertEqual(result['memberBibNumbers'], bibs)
+                self.assertEqual(result['memberNames'], names)
+                self.assertEqual(result['bibNumber'], category+'-TEAM')
+            for index in range(1, 8):
+                result = self.checkpoint(entry, index, seconds=index * 301)
+                self.assertEqual(result['status'], 'accepted')
+                self.assertEqual(result['memberBibNumbers'], bibs)
+
+    def test_relay_wristbands_share_progress_regardless_of_hardware_serial(self):
+        entry = self.register('G-901', 0)
+        race_id = entry['race_id']
+        self.request_json('/api/start-checkins', {
+            'raceId': race_id, 'cardCode': entry['card_code'], 'deviceId': 'start-reader',
+        })
+        start = datetime(2026, 9, 20, 1, tzinfo=timezone.utc)
+        self.request_json('/api/start-race', {
+            'raceId': race_id, 'participantIds': [entry['id']],
+            'startedAt': start.isoformat(), 'adminCode': 'test-clear-code-1234',
+        })
+        checkpoints = ['STATION_2_START', 'STATION_3_START', 'STATION_4_START',
+                       'STATION_5_START', 'STATION_6_START', 'STATION_7_START', 'END']
+        def scan(index, serial, extra_seconds=0):
+            return self.request_json('/api/timing-events', {
+                'raceId': race_id, 'cardCode': entry['card_code'], 'serialNumber': serial,
+                'stationId': checkpoints[index], 'timingMode': 'manual',
+                'deviceId': f'reader-{index}',
+                'eventId': f'shared-{index}-{serial}-{extra_seconds}',
+                'eventTime': (start + timedelta(minutes=5*(index+1), seconds=extra_seconds)).isoformat(),
+            })
+        # Two physical tags accidentally presented together must advance the team only once.
+        with concurrent.futures.ThreadPoolExecutor(2) as pool:
+            results = list(pool.map(lambda serial: scan(0, serial), ['UID-1', 'UID-2']))
+        self.assertEqual(sum(result['status'] == 'accepted' for result in results), 1)
+        self.assertEqual(scan(0, 'UID-3', 20)['status'], 'wrong_checkpoint')
+        for index in range(1, 7):
+            self.assertEqual(scan(index, f'UID-{index % 4 + 1}')['status'], 'accepted')
+        rows = self.request_json('/api/leaderboard?raceId='+race_id)['leaderboard']
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['status'], 'finished')
+        self.assertEqual(rows[0]['rawElapsedMs'], 35 * 60 * 1000)
+        events = self.request_json('/api/timing-events?raceId='+race_id)['events']
+        accepted = [event for event in events if event['status'] == 'accepted']
+        self.assertEqual(len(accepted), 8)
+        self.assertEqual(len({event['participant_id'] for event in accepted}), 1)
+
     def test_seven_categories_and_day_validation(self):
         for code in 'ABCDEFG':
             entry = self.register(code+'-001', 1)

@@ -268,7 +268,13 @@
     .entry-name { margin: 0; font-size: 16px; line-height: 1.25; overflow-wrap: anywhere; }
     .team-code { display: inline-block; margin: 0 8px 3px 0; color: var(--brand); font-size: 17px; font-weight: 950; }
     body.hoka .team-code { color: #148300; }
-    .member-names, .card-code, .state-detail { margin-top: 4px; color: var(--muted); font-size: 11px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
+    .member-names, .entry-bibs, .card-code, .state-detail { margin-top: 4px; color: var(--muted); font-size: 11px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
+    .entry-bibs { color: #24313d; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 850; }
+    .entry-bibs { display: flex; flex-wrap: wrap; gap: 5px 12px; font-size: 13px; }
+    .entry-bibs > div { max-width: 100%; }
+    .entry-bibs strong { font-size: 16px; }
+    .entry-bibs .missing-bib { color: #9b5a00; }
+    .participant-summary { white-space: pre-line; overflow-wrap: anywhere; }
     .entry-category { display: inline-block; margin: 2px 7px 0 0; color: #746a00; font-size: 11px; font-weight: 900; }
     .card-code { margin-top: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     .state { display: inline-flex; width: fit-content; min-height: 26px; align-items: center; border-radius: 999px; padding: 4px 8px; background: #e9eef2; color: #596776; font-size: 11px; font-weight: 900; }
@@ -460,7 +466,7 @@
         </div>
         <div id="nanxiCategoryTabs" class="nanxi-category-tabs" hidden aria-label="Nanxi 赛事组别"></div>
         <div class="queue-toolbar">
-          <input id="judgeParticipantQuery" name="judge-participant-query" type="text" placeholder="搜索选手、团队或卡号" autocomplete="off" spellcheck="false" readonly>
+          <input id="judgeParticipantQuery" name="judge-participant-query" type="text" placeholder="搜索成员号码牌、姓名、队伍或手环号" autocomplete="off" spellcheck="false" readonly>
           <div class="batch-copy"><span id="batchScopeText">待发参赛单位可自由多选</span> · 当前显示 <strong id="visibleCount">0</strong> 个</div>
         </div>
         <div class="column-head" aria-hidden="true">
@@ -528,7 +534,7 @@
   </div>
 
   <script src="./timing-api.js"></script>
-  <script src="./nanxi.js"></script>
+  <script src="./nanxi.js?v=20260920-1"></script>
   <script>
     const elements = {
       adjustmentDirection: document.querySelector("#adjustmentDirection"),
@@ -985,6 +991,16 @@
         .some((candidate) => String(candidate || "").trim().toUpperCase() === value);
     }
 
+    function entryIdentityText(entry, { includeCard = false } = {}) {
+      const roster = Nanxi.rosterText(entry);
+      return [
+        entry.athleteName,
+        !roster && entry.bibNumber ? `号码牌：${entry.bibNumber}` : "",
+        roster ? `全队号码牌：${roster}` : "",
+        includeCard && entry.cardCode ? `手环：${entry.cardCode}` : ""
+      ].filter(Boolean).join(" · ");
+    }
+
     function focusEntryFromNfc(cardCode) {
       const entry = entries.find((candidate) => nfcEntryMatches(candidate, cardCode));
       if (!entry) {
@@ -994,6 +1010,9 @@
         return;
       }
       nfcFocusedParticipantId = entry.participantId;
+      elements.searchInput.value = "";
+      activeCategory = "all";
+      updateNanxiCategoryTabs();
       if (isStationJudge()) {
         activeFilter = "racing";
       } else if (currentJudgeScope() === "start") {
@@ -1015,7 +1034,7 @@
         : "，请查看当前状态";
       elements.judgeNfcStatus.textContent = `${cardCode} · 已定位`;
       elements.judgeNfcStatus.dataset.tone = "success";
-      setMessage(`${entry.athleteName} · ${statusDetail(entry)}${actionHint}`, "success");
+      setMessage(`${entryIdentityText(entry)} · ${statusDetail(entry)}${actionHint}`, "success");
     }
 
     async function stopJudgeNfcScan() {
@@ -1167,7 +1186,7 @@
         if (filterStatus(entry) !== activeFilter) return false;
         if (isStationJudge() && !confirmableCheckpointForEntry(entry)) return false;
         if (!query) return true;
-        const haystack = [entry.bibNumber, entry.athleteName, entry.cardCode, ...(entry.memberNames || [])].join(" ").toLowerCase();
+        const haystack = [entry.bibNumber, ...Nanxi.memberBibNumbers(entry), entry.athleteName, entry.cardCode, ...(entry.memberNames || [])].join(" ").toLowerCase();
         return haystack.includes(query);
       });
     }
@@ -1407,7 +1426,8 @@
       }
 
       const main = document.createElement("div");
-      if (entry.bibNumber) {
+      const roster = Nanxi.memberRoster(entry);
+      if (!roster.length && entry.bibNumber) {
         const teamCode = document.createElement("span");
         teamCode.className = "team-code";
         teamCode.textContent = entry.bibNumber;
@@ -1424,10 +1444,18 @@
       name.className = "entry-name";
       name.textContent = entry.athleteName;
       main.append(name);
-      if (entry.entryType !== "individual" && entry.memberNames?.length) {
+      if (roster.length) {
         const members = document.createElement("div");
-        members.className = "member-names";
-        members.textContent = entry.memberNames.join(" / ");
+        members.className = "entry-bibs";
+        members.setAttribute("aria-label", "全队成员号码牌");
+        roster.forEach((member) => {
+          const item = document.createElement("div");
+          const bib = document.createElement("strong");
+          bib.textContent = member.bib || "号码待补录";
+          if (!member.bib) item.className = "missing-bib";
+          item.append(bib, document.createTextNode(` ${member.name}`));
+          members.append(item);
+        });
         main.append(members);
       }
 
@@ -1820,8 +1848,8 @@
         ? "确认后，所选参赛单位会立即使用同一个模拟开始时间。"
         : "确认后，所选参赛单位会立即写入同一个开始时间。";
       elements.startParticipants.textContent = selected
-        .map((entry) => `${entry.bibNumber ? `${entry.bibNumber} · ` : ""}${entry.athleteName}`)
-        .join(" / ");
+        .map((entry) => entryIdentityText(entry, { includeCard: true }))
+        .join("\n\n");
       openModal(elements.startBackdrop);
       elements.confirmStartButton.focus();
     }
@@ -1842,7 +1870,7 @@
       elements.checkpointFields.hidden = mode !== "checkpoint";
       elements.operationReasonField.hidden = ["checkpoint", "rollback", "checkin"].includes(mode);
       elements.operationReason.required = !["checkpoint", "rollback", "checkin"].includes(mode);
-      elements.operationParticipant.textContent = `${entry.bibNumber ? `${entry.bibNumber} · ` : ""}${entry.athleteName} · ${entry.cardCode}`;
+      elements.operationParticipant.textContent = entryIdentityText(entry, { includeCard: true });
       const config = {
         adjustment: ["加减最终时间", "对已完成成绩增加罚时或减少时间。", "保存调整", "primary", "例如：动作判罚或现场复核"],
         manual: ["手动调整时间", "输入完整的开始时间和结束时间，原始刷卡记录不会被修改。", "保存手动时间", "primary", "例如：设备故障，依据备用计时记录"],
