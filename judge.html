@@ -173,6 +173,14 @@
       color: #ffffff;
     }
     .role-copy { min-width: 0; }
+    .judge-nfc-control { display: flex; min-width: 230px; align-items: center; gap: 8px; }
+    .judge-nfc-control button { min-height: 42px; border: 1px solid #c7d1da; border-radius: 6px; padding: 8px 12px; background: #ffffff; color: #263744; font-size: 12px; font-weight: 900; cursor: pointer; }
+    .judge-nfc-control button[data-scanning="true"] { border-color: #087a4b; background: #e4f5ed; color: #076343; }
+    .judge-nfc-control button:disabled { cursor: default; opacity: .5; }
+    .judge-nfc-status { color: var(--muted); font-size: 11px; line-height: 1.35; }
+    .judge-nfc-status[data-tone="error"] { color: var(--error); }
+    .judge-nfc-status[data-tone="success"] { color: var(--success); }
+    .entry-row.nfc-focused { outline: 3px solid #d97706; outline-offset: -3px; background: #fff9e8; }
     .role-kicker { color: rgb(255 255 255 / 65%); font-size: 11px; font-weight: 900; }
     .role-title { display: block; margin-top: 3px; font-size: 20px; line-height: 1.2; }
     .role-description { margin: 5px 0 0; color: rgb(255 255 255 / 74%); font-size: 12px; font-weight: 700; line-height: 1.45; }
@@ -351,6 +359,8 @@
       .auth-panel label { font-size: 14px; }
       .role-bar { grid-template-columns: 1fr auto; align-items: end; padding: 12px; }
       .role-copy { grid-column: 1 / -1; }
+      .judge-nfc-control { grid-column: 1 / -1; min-width: 0; }
+      .judge-nfc-control button { flex: 0 0 auto; }
       .role-title { font-size: 19px; }
       .role-bar label { min-width: 0; }
       .utility-button, .utility-link { min-width: 0; padding: 7px 6px; font-size: 11px; }
@@ -422,7 +432,7 @@
         <label>比赛场次<div class="responsive-select"><select id="raceId"><option value="">正在读取比赛...</option></select><button class="responsive-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"></button><div class="responsive-select-menu" role="listbox" hidden></div></div></label>
         <button id="refreshButton" class="utility-button" type="button">刷新</button>
         <a id="bindingLink" class="utility-link" href="./admin.html">账号管理</a>
-        <a id="nfcLink" class="utility-link" href="./web-nfc-timing-test.html" target="_blank" rel="noopener">NFC 打卡 / 设备绑定 ↗</a>
+        <a id="nfcLink" class="utility-link" href="./web-nfc-timing-test.html" target="_blank" rel="noopener">设备绑定 ↗</a>
         <a id="demoLink" class="utility-link" href="./judge.html?demo=1">体验模式</a>
       </section>
 
@@ -434,6 +444,10 @@
         </div>
         <label>操作岗位<select id="roleSelect" aria-label="操作岗位"></select></label>
         <button id="switchAccountButton" class="utility-button switch-account-button" type="button">切换账号</button>
+        <div class="judge-nfc-control">
+          <button id="judgeNfcButton" type="button">启动 NFC 定位</button>
+          <span id="judgeNfcStatus" class="judge-nfc-status">刷卡后自动定位队伍</span>
+        </div>
       </section>
 
       <section class="queue" aria-label="比赛选手队列">
@@ -543,6 +557,8 @@
       finishedCount: document.querySelector("#finishedCount"),
       judgeApp: document.querySelector("#judgeApp"),
       judgeIdentity: document.querySelector("#judgeIdentity"),
+      judgeNfcButton: document.querySelector("#judgeNfcButton"),
+      judgeNfcStatus: document.querySelector("#judgeNfcStatus"),
       manualFields: document.querySelector("#manualFields"),
       manualCheckpoint: document.querySelector("#manualCheckpoint"),
       manualCheckpointTime: document.querySelector("#manualCheckpointTime"),
@@ -632,6 +648,10 @@
     let preferredRaceId = new URLSearchParams(location.search).get("raceId") || "";
     let authRaceCatalog = new Map();
     let judgeConsoleStarted = false;
+    let judgeNfcReader = null;
+    let judgeNfcAbortController = null;
+    let judgeNfcStarting = false;
+    let nfcFocusedParticipantId = null;
     let demoEntries = createDemoEntries();
 
     function demoIsoAgo(milliseconds) {
@@ -930,6 +950,135 @@
       elements.connection.dataset.tone = tone;
     }
 
+    function judgeNfcUnavailableReason() {
+      if (window.self !== window.top) return "当前页面被嵌入，无法扫描 NFC。请直接打开裁判台页面。";
+      if (!window.isSecureContext) return "NFC 需要 HTTPS 安全页面。";
+      if (!("NDEFReader" in window)) return "当前浏览器不支持 Web NFC，请使用安卓 Chrome；iPhone 可继续使用列表中的人工确认。";
+      return "";
+    }
+
+    function decodeJudgeNfcRecord(record) {
+      if (!record?.data) return "";
+      try {
+        return new TextDecoder(record.encoding || "utf-8").decode(record.data).trim();
+      } catch (error) {
+        return "";
+      }
+    }
+
+    function readJudgeNfcCardCode(message) {
+      for (const record of message.records || []) {
+        if (record.recordType !== "text") continue;
+        const value = decodeJudgeNfcRecord(record).toUpperCase();
+        if (value) return value;
+      }
+      return "";
+    }
+
+    function nfcEntryMatches(entry, value) {
+      let memberBibs = entry.memberBibNumbers || entry.member_bib_numbers || [];
+      if (typeof memberBibs === "string") {
+        try { memberBibs = JSON.parse(memberBibs); } catch (error) { memberBibs = [memberBibs]; }
+      }
+      if (!Array.isArray(memberBibs)) memberBibs = [memberBibs];
+      return [entry.cardCode, entry.card_code, entry.bibNumber, entry.bib_number, ...memberBibs]
+        .some((candidate) => String(candidate || "").trim().toUpperCase() === value);
+    }
+
+    function focusEntryFromNfc(cardCode) {
+      const entry = entries.find((candidate) => nfcEntryMatches(candidate, cardCode));
+      if (!entry) {
+        setMessage(`NFC ${cardCode} 未在当前比赛中找到，请检查比赛日期或报名信息。`, "error");
+        elements.judgeNfcStatus.textContent = `未找到 ${cardCode}`;
+        elements.judgeNfcStatus.dataset.tone = "error";
+        return;
+      }
+      nfcFocusedParticipantId = entry.participantId;
+      if (isStationJudge()) {
+        activeFilter = "racing";
+      } else if (currentJudgeScope() === "start") {
+        activeFilter = resolvedStatus(entry) === "ready" ? "ready" : "not_ready";
+      } else {
+        const targetFilter = resolvedStatus(entry);
+        activeFilter = ["ready", "racing", "finished", "not_ready", "dnf"].includes(targetFilter)
+          ? targetFilter
+          : "racing";
+      }
+      applyJudgeRoleView();
+      renderEntries();
+      updateDock();
+      const row = elements.entryList.querySelector(`[data-participant-id="${CSS.escape(String(entry.participantId))}"]`);
+      row?.scrollIntoView({ behavior: "smooth", block: "center" });
+      const nextCheckpoint = confirmableCheckpointForEntry(entry);
+      const actionHint = nextCheckpoint
+        ? `，请点击“${checkpointActionLabel(nextCheckpoint)}”确认`
+        : "，请查看当前状态";
+      elements.judgeNfcStatus.textContent = `${cardCode} · 已定位`;
+      elements.judgeNfcStatus.dataset.tone = "success";
+      setMessage(`${entry.athleteName} · ${statusDetail(entry)}${actionHint}`, "success");
+    }
+
+    async function stopJudgeNfcScan() {
+      judgeNfcAbortController?.abort();
+      judgeNfcAbortController = null;
+      judgeNfcReader = null;
+      judgeNfcStarting = false;
+      elements.judgeNfcButton.dataset.scanning = "false";
+      elements.judgeNfcButton.textContent = "启动 NFC 定位";
+      elements.judgeNfcStatus.textContent = "刷卡后自动定位队伍";
+      elements.judgeNfcStatus.dataset.tone = "";
+    }
+
+    async function toggleJudgeNfcScan() {
+      if (judgeNfcReader || judgeNfcStarting) {
+        await stopJudgeNfcScan();
+        setMessage("NFC 定位已停止。", "info");
+        return;
+      }
+      const unavailable = judgeNfcUnavailableReason();
+      if (unavailable) {
+        elements.judgeNfcStatus.textContent = unavailable;
+        elements.judgeNfcStatus.dataset.tone = "error";
+        setMessage(unavailable, "error");
+        return;
+      }
+      judgeNfcStarting = true;
+      elements.judgeNfcButton.disabled = true;
+      try {
+        judgeNfcAbortController = new AbortController();
+        judgeNfcReader = new NDEFReader();
+        const scanStarted = judgeNfcReader.scan({ signal: judgeNfcAbortController.signal });
+        judgeNfcReader.addEventListener("reading", (event) => {
+          const cardCode = readJudgeNfcCardCode(event.message);
+          if (!cardCode) {
+            setMessage("读到了 NFC，但没有找到卡号文本。", "error");
+            return;
+          }
+          focusEntryFromNfc(cardCode);
+        });
+        judgeNfcReader.addEventListener("readingerror", () => {
+          setMessage("NFC 读取失败，请将卡片移开后重新贴卡。", "error");
+        });
+        await scanStarted;
+        elements.judgeNfcButton.dataset.scanning = "true";
+        elements.judgeNfcButton.textContent = "停止 NFC 定位";
+        elements.judgeNfcStatus.textContent = "正在等待 NFC 卡…";
+        elements.judgeNfcStatus.dataset.tone = "success";
+        setMessage("NFC 定位已启动，刷卡后会自动定位队伍。", "success");
+      } catch (error) {
+        await stopJudgeNfcScan();
+        const detail = error.name === "NotAllowedError"
+          ? "NFC 权限未允许，请在安卓 Chrome 的网站权限中允许 NFC。"
+          : error.message;
+        elements.judgeNfcStatus.textContent = detail;
+        elements.judgeNfcStatus.dataset.tone = "error";
+        setMessage(`无法启动 NFC 定位：${detail}`, "error");
+      } finally {
+        judgeNfcStarting = false;
+        elements.judgeNfcButton.disabled = false;
+      }
+    }
+
     function configureDemoMode() {
       if (!isDemoMode) return;
       document.title = "HOKA 裁判台体验模式";
@@ -1120,7 +1269,7 @@
       elements.nfcLink.hidden = false;
       const checkpoint = allowedJudgeCheckpoints()[0] || "START";
       const label = checkpointLabel(checkpoint);
-      elements.nfcLink.title = `在独立页面打开 ${label}，本页可继续手动确认`;
+      elements.nfcLink.title = `打开独立页面管理 ${label} 的手机绑定`;
       elements.nfcLink.href = `./web-nfc-timing-test.html?raceId=${encodeURIComponent(raceId)}&timingMode=manual&checkpoint=${encodeURIComponent(checkpoint)}`;
     }
 
@@ -1143,6 +1292,7 @@
       elements.raceId.disabled = false;
       [elements.bindingLink, elements.demoLink].forEach((link) => { link.hidden = !isAdminJudge(); });
       elements.nfcLink.hidden = isDemoMode;
+      elements.judgeNfcButton.hidden = isDemoMode;
       selectedIds.clear();
     }
 
@@ -1229,7 +1379,8 @@
 
     function createEntryRow(entry) {
       const row = document.createElement("article");
-      row.className = `entry-row${selectedIds.has(entry.participantId) ? " selected" : ""}`;
+      row.dataset.participantId = String(entry.participantId);
+      row.className = `entry-row${selectedIds.has(entry.participantId) ? " selected" : ""}${nfcFocusedParticipantId === entry.participantId ? " nfc-focused" : ""}`;
 
       const checkWrap = document.createElement("label");
       checkWrap.className = "entry-check";
@@ -1961,6 +2112,7 @@
       window.clearInterval(pollTimer);
       pollTimer = 0;
       closeModals();
+      stopJudgeNfcScan();
       elements.authUsername.value = judgeRoleOptions.some((option) => option.role === username)
         ? username
         : "admin";
@@ -2054,6 +2206,7 @@
     elements.startRaceButton.addEventListener("click", openStartModal);
     elements.confirmStartButton.addEventListener("click", confirmStart);
     elements.authForm.addEventListener("submit", authenticateJudge);
+    elements.judgeNfcButton.addEventListener("click", toggleJudgeNfcScan);
     elements.operationForm.addEventListener("submit", submitOperation);
     elements.roleSelect.addEventListener("change", () => {
       const nextRole = elements.roleSelect.value;
