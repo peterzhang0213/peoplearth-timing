@@ -1416,7 +1416,7 @@
     }
 
     function roleDescription(role) {
-      if (role === "admin") return "可查看全部队伍、确认任意下一站，并撤回最近一次站点确认。";
+      if (role === "admin") return "可查看全部队伍、确认任意下一站、暂停或恢复选手计时，并撤回最近一次站点确认。";
       if (role === "start") return "负责待发队伍的批量发枪和起点人工确认。";
       if (role === `station_${activeRace?.stationCount || 5}`) return "仅显示下一步为最后一站结束的参赛单位；确认后记录冲线时间。";
       const stationNumber = String(role).replace("station_", "");
@@ -1479,7 +1479,7 @@
         ? `${checkpointScope} · NFC 或手动二选一，本站只接受一次确认`
         : scope === "start"
           ? "起点裁判 · 仅显示待发和未核验队伍"
-          : "全局管理员可确认任意下一站并撤回误触";
+          : "全局管理员可确认任意下一站、暂停或恢复计时，并撤回误触";
     }
 
     function updateNfcLink() {
@@ -1697,6 +1697,11 @@
           actions.append(actionButton(checkpointActionLabel(confirmableCheckpoint), "checkpoint", entry, "primary"));
         }
         if (isAdminJudge()) {
+          if (currentStatus === "racing") {
+            actions.append(actionButton("暂停计时", "pause", entry, "danger"));
+          } else if (currentStatus === "paused") {
+            actions.append(actionButton("恢复计时", "resume", entry, "primary"));
+          }
           if (entry.result?.latestCheckpoint) actions.append(actionButton("撤回上一步", "rollback", entry));
           actions.append(actionButton("手动时间", "manual", entry));
           actions.append(actionButton("确认退赛", "dnf", entry, "danger"));
@@ -1778,6 +1783,28 @@
       }];
       if (mode === "adjustment") {
         entry.result.elapsedMs = Math.max(0, Number(entry.result.elapsedMs || 0) + details.adjustmentMs);
+        return;
+      }
+      if (mode === "pause") {
+        entry.status = "started";
+        entry.result = entry.result || {};
+        entry.result.status = "paused";
+        entry.result.elapsedMs = entry.result.startTime
+          ? Math.max(0, Date.now() - new Date(entry.result.startTime).getTime())
+          : Number(entry.result.elapsedMs || 0);
+        entry.result.pausedAt = new Date().toISOString();
+        return;
+      }
+      if (mode === "resume") {
+        entry.status = "started";
+        entry.result = entry.result || {};
+        const pausedAt = entry.result.pausedAt ? new Date(entry.result.pausedAt).getTime() : NaN;
+        const pauseDuration = Number.isFinite(pausedAt) ? Math.max(0, Date.now() - pausedAt) : 0;
+        if (entry.result.startTime && pauseDuration) {
+          entry.result.startTime = new Date(new Date(entry.result.startTime).getTime() + pauseDuration).toISOString();
+        }
+        entry.result.status = "racing";
+        delete entry.result.pausedAt;
         return;
       }
       if (mode === "manual") {
@@ -2100,6 +2127,8 @@
         rollback: ["撤回最近确认", "只撤回该队伍最近一次站点确认，原始记录会保留并标记为已撤回。", "确认撤回", "danger", ""],
         dnf: ["确认选手退赛", "确认后选手会立即标记为 DNF。", "确认退赛", "danger", "请填写退赛原因"],
         restore: ["撤销退赛", "选手会恢复到退赛前的计时状态。", "确认恢复", "primary", "请填写恢复原因"],
+        pause: ["暂停计时", "因前方站点拥堵，暂停该参赛单位计时。暂停期间不能继续打卡。", "确认暂停", "danger", "例如：站点 3 器械未空出"],
+        resume: ["恢复计时", "站点已空出，恢复该参赛单位计时。", "确认恢复", "primary", "例如：已允许进入站点 3"],
         "cancel-checkin": ["取消起点核验", "选手会回到未核验状态，不会删除报名或 NFC 绑定。", "确认取消", "danger", "请填写取消原因"]
       }[mode];
       elements.operationTitle.textContent = config[0];
