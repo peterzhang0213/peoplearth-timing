@@ -152,7 +152,7 @@ button { cursor: pointer; }
 .board-head,
 .row {
   display: grid;
-  grid-template-columns: 82px minmax(300px, 1.3fr) 140px 205px 100px;
+  grid-template-columns: 82px minmax(300px, 1.3fr) 205px 100px;
   align-items: center;
   column-gap: 18px;
 }
@@ -167,7 +167,7 @@ button { cursor: pointer; }
   text-transform: uppercase;
   flex-shrink: 0;
 }
-.board-head span:nth-child(4), .board-head span:nth-child(5) { text-align: right; }
+.board-head span:nth-child(3), .board-head span:nth-child(4) { text-align: right; }
 #rows {
   min-height: 0;
   flex: 1;
@@ -190,11 +190,10 @@ button { cursor: pointer; }
   font-variant-numeric: tabular-nums;
 }
 .row:first-child .rank { color: var(--accent); }
-.id, .time, .station span {
+.time, .station span {
   font-family: var(--font);
   font-variant-numeric: tabular-nums;
 }
-.id { color: var(--muted); font-size: 15px; font-weight: 800; overflow-wrap: anywhere; }
 .name {
   min-width: 0;
   color: var(--ink);
@@ -295,7 +294,7 @@ button { cursor: pointer; }
 }
 @media (max-width: 1100px) {
   .screen { padding: 18px 18px 14px; }
-  .board-head, .row { grid-template-columns: 55px minmax(220px, 1fr) 100px 150px 75px; column-gap: 11px; }
+  .board-head, .row { grid-template-columns: 55px minmax(220px, 1fr) 150px 75px; column-gap: 11px; }
   .name { font-size: 19px; }
   .time { font-size: 23px; }
   .station { padding-left: 5px; padding-right: 5px; }
@@ -312,12 +311,11 @@ button { cursor: pointer; }
   .search { width: 100%; margin-left: 0; }
   .board-head, .row { grid-template-columns: 32px minmax(0, 1fr) 105px; column-gap: 8px; }
   .board-head { min-height: 36px; padding: 0 9px; font-size: 9px; letter-spacing: 0; }
-  .board-head span:nth-child(3), .board-head span:nth-child(5) { display: none; }
+  .board-head span:nth-child(4) { display: none; }
   .row { min-height: 122px; grid-template-rows: auto auto auto; row-gap: 6px; padding: 10px 9px; }
   .rank { grid-column: 1; grid-row: 1 / span 2; font-size: 22px; }
   .name { grid-column: 2; grid-row: 1; font-size: 15px; }
   .time { grid-column: 3; grid-row: 1; font-size: 17px; }
-  .id { grid-column: 2; grid-row: 2; font-size: 11px; }
   .status { grid-column: 3; grid-row: 2; font-size: 10px; }
   .members { margin-top: 4px; font-size: 11px; }
   .station-strip { grid-row: 3; grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -337,7 +335,7 @@ button { cursor: pointer; }
     <section class="heading"><h1 id="title">全部组别</h1></section>
     <div class="group-switch" id="groups" aria-label="比赛组别"></div>
     <section class="board" aria-label="实时排行榜">
-      <div class="board-head"><span>组内名次</span><span>选手 / 队伍</span><span>选手号</span><span>总用时</span><span>状态</span></div>
+      <div class="board-head"><span>组内名次</span><span>参赛单位</span><span>总用时</span><span>状态</span></div>
       <div id="rows" aria-live="off"></div>
     </section>
     <div class="footer"><span id="entryCount">等待成绩</span><button id="scrollToggle" class="scroll-control" aria-pressed="true">暂停滚动</button><span id="connection" role="status">正在读取成绩…</span></div>
@@ -356,7 +354,7 @@ button { cursor: pointer; }
       $('#modeLabel').textContent=demo?'DEMO · 演示数据':'LIVE RANKING · 实时排名';
       function controls() {
         $('#title').textContent=group==='all'?'全部组别':N.groups[group].label;
-        $('#groups').innerHTML=[`<button data-group="all" class="${group==='all'?'active':''}" aria-pressed="${group==='all'}">全部</button>`, ...E.codes.map(code=>`<button data-group="${code}" class="${group===code?'active':''}" aria-pressed="${group===code}">${N.groups[code].label}</button>`), '<input id="search" class="search" aria-label="查找选手或队伍" placeholder="选手号 / 姓名 / 队伍" autocomplete="off">'].join('');
+        $('#groups').innerHTML=[`<button data-group="all" class="${group==='all'?'active':''}" aria-pressed="${group==='all'}">全部</button>`, ...E.codes.map(code=>`<button data-group="${code}" class="${group===code?'active':''}" aria-pressed="${group===code}">${N.groups[code].label}</button>`), '<input id="search" class="search" aria-label="查找选手或队伍" placeholder="姓名 / 队伍" autocomplete="off">'].join('');
         $('#search').value=query;
         $('#search').addEventListener('input',event=>{query=event.target.value.trim();render();resetScroll();});
       }
@@ -366,8 +364,7 @@ button { cursor: pointer; }
         $('#entryCount').textContent=`${demo?'演示 · ':''}已显示 ${entries.length} 个 · 完赛 ${entries.filter(row=>row.status==='finished').length} 个`;
         const markup=entries.length?entries.map(row=>`<div class="row">
           <span class="rank">${row.status==='finished'?row.categoryRank??'—':'—'}</span>
-          <span class="name"><span class="group-label">${N.escape(N.groups[row.categoryCode]?.label||'组别待确认')}</span>${N.escape(row.athleteName)}${N.memberRoster(row).length?`<small class="members">${N.escape(N.rosterText(row))}</small>`:''}</span>
-          <span class="id">${N.escape(row.bibNumber||'—')}</span>
+          <span class="name"><span class="group-label">${N.escape(N.groups[row.categoryCode]?.label||'组别待确认')}</span>${N.escape(row.athleteName)}</span>
           <span class="time">${N.duration(row.elapsedMs)}${row.penaltyMs?`<small class="penalty">罚时 +${N.duration(row.penaltyMs)}</small>`:''}</span>
           <span class="status">${labels[row.status]||'待确认'}</span>
           <div class="station-strip" style="--station-count:8">${E.stations.map((name,i)=>{const ms=row.stationSplits?.[`station${i+1}Ms`],done=ms!=null,next=!done&&row.status==='racing'&&Number(row.progressIndex)===i;return `<div class="station ${done?'done':next?'next':''}"><strong>${String(i+1).padStart(2,'0')} ${name}</strong><span>${done?N.duration(ms):next?'进行中':'—'}</span></div>`;}).join('')}</div>
