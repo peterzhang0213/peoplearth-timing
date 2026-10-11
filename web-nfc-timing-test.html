@@ -939,7 +939,9 @@
     let audioContext = null;
     let feedbackTimer = null;
     let ndefReader = null;
-    let scanQueue = Promise.resolve();
+    let pendingUploads = 0;
+    let activeCardCode = "";
+    const cardQueues = new Map();
     let speechTimer = null;
     let wakeLock = null;
     let raceProfile = null;
@@ -1471,6 +1473,13 @@
     function renderReadyState() {
       const isAuto = elements.timingMode.value === "auto";
       const isStartCheckin = !isAuto && elements.stationId.value === "START";
+      if (pendingUploads > 0) {
+        elements.scanner.dataset.tone = "busy";
+        elements.scanState.textContent = `正在写入服务器${pendingUploads > 1 ? `（${pendingUploads}张）` : ""}`;
+        elements.heroTitle.textContent = activeCardCode || "正在上传";
+        elements.heroDetail.textContent = "请保持卡片移开，等待确认";
+        return;
+      }
       elements.scanner.dataset.tone = document.body.classList.contains("scanning") ? "ready" : "idle";
       elements.scanState.textContent = document.body.classList.contains("scanning") ? "正在扫描" : "未启动";
       if (!document.body.classList.contains("scanning")) {
@@ -1505,10 +1514,12 @@
     }
 
     function setBusy(cardCode) {
+      activeCardCode = cardCode;
       elements.scanner.dataset.tone = "busy";
-      elements.scanState.textContent = "正在写入服务器";
+      elements.scanState.textContent = `正在写入服务器${pendingUploads > 1 ? `（${pendingUploads}张）` : ""}`;
       elements.heroTitle.textContent = cardCode;
       elements.heroDetail.textContent = "请保持卡片移开，等待确认";
+      setStatus(`已读卡：${cardCode}，正在上传…`, "info");
     }
 
     function decodeRecord(record) {
@@ -1766,7 +1777,7 @@
         title: athlete,
         detail: checkpoint,
         bibText,
-        duration: tone === "error" ? 2400 : 1600
+        duration: tone === "error" ? 2200 : 1300
       };
 
       if (status === "wrong_gate") {
@@ -1800,7 +1811,7 @@
 
       elements.lastResult.textContent = [athlete, bibText, feedback.detail].filter(Boolean).join(" · ");
       elements.lastTime.textContent = new Date().toLocaleTimeString([], { hour12: false });
-      if (bibText) feedback.duration = Math.max(feedback.duration, 3000);
+      if (bibText) feedback.duration = Math.max(feedback.duration, 1600);
       elements.scanner.dataset.tone = tone === "warning" ? "busy" : tone;
       setStatus(`${responseLabel(status)}：${athlete} · ${feedback.detail}`, tone);
       showFeedback(feedback);
@@ -1863,29 +1874,41 @@
       recentScans.set(duplicateKey, now);
 
       const payload = buildPayload(cardCode, serialNumber);
-      scanQueue = scanQueue
-        .then(async () => {
-          setBusy(cardCode);
-          const response = await uploadEvent(payload);
-          handleResponse(response, payload);
-        })
-        .catch((error) => {
-          elements.scanner.dataset.tone = "error";
-          elements.lastResult.textContent = `${cardCode} · 上传失败`;
-          elements.lastTime.textContent = new Date().toLocaleTimeString([], { hour12: false });
-          setStatus(`未记录：${error.message}`, "error");
-          announceVoice("上传失败，本次打卡没有记录，请检查网络后重试");
-          addRow(payload, { status: "upload_failed", stationId: payload.stationId }, "error");
-          showFeedback({
-            tone: "error",
-            mark: "X",
-            kicker: "没有记录",
-            title: cardCode,
-            detail: `上传失败：${error.message}`,
-            duration: 2800
-          });
+      pendingUploads += 1;
+      setBusy(cardCode);
+      const previousRequest = cardQueues.get(duplicateKey) || Promise.resolve();
+      const request = previousRequest.catch(() => {}).then(async () => {
+          try {
+            const response = await uploadEvent(payload);
+            handleResponse(response, payload);
+          } catch (error) {
+            elements.scanner.dataset.tone = "error";
+            elements.lastResult.textContent = `${cardCode} · 上传失败`;
+            elements.lastTime.textContent = new Date().toLocaleTimeString([], { hour12: false });
+            setStatus(`未记录：${error.message}`, "error");
+            announceVoice("上传失败，本次打卡没有记录，请检查网络后重试");
+            addRow(payload, { status: "upload_failed", stationId: payload.stationId }, "error");
+            showFeedback({
+              tone: "error",
+              mark: "X",
+              kicker: "没有记录",
+              title: cardCode,
+              detail: `上传失败：${error.message}`,
+              duration: 2200
+            });
+          } finally {
+            pendingUploads = Math.max(0, pendingUploads - 1);
+            if (cardQueues.get(duplicateKey) === request) cardQueues.delete(duplicateKey);
+            if (pendingUploads > 0) {
+              setBusy(activeCardCode);
+            } else {
+              activeCardCode = "";
+              if (!elements.feedback.classList.contains("show")) renderReadyState();
+            }
+          }
         });
-      return scanQueue;
+      cardQueues.set(duplicateKey, request);
+      return request;
     }
 
     function queueReading(event) {

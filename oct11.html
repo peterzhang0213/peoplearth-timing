@@ -378,7 +378,7 @@ button { cursor: pointer; }
       $('#groups').addEventListener('click',event=>{const button=event.target.closest('[data-group]');if(!button)return;group=button.dataset.group;controls();render();resetScroll();const url=new URL(location.href);url.searchParams.set('group',group);history.replaceState({},'',url);});
       async function refresh(){if(loading)return;loading=true;const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),10000);try{const next=demo?E.mock():await E.fetchResults(controller.signal);payload=next;render();$('#connection').classList.remove('error');$('#connection').textContent=`${demo?'演示':'已更新'} ${new Date(next.generatedAt).toLocaleTimeString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})}`;}catch(error){$('#connection').classList.add('error');$('#connection').textContent=`${N.resultError(error)} · ${payload?'保留上次成绩，':''}正在重试`;if(!payload)scroller.innerHTML='<div class="empty">暂时无法读取比赛成绩，请检查连接或赛事配置。</div>';}finally{clearTimeout(timeout);loading=false;}}
       function clock(){const now=new Date();$('#clock').textContent=now.toLocaleTimeString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false});$('#clock').dateTime=now.toISOString();}
-      controls();render();refresh();clock();requestAnimationFrame(frame);setInterval(clock,1000);setInterval(()=>{if(document.visibilityState==='visible')refresh();},3000);
+      controls();render();refresh();clock();requestAnimationFrame(frame);setInterval(clock,1000);setInterval(()=>{if(document.visibilityState==='visible')refresh();},1000);
     });
   </script>
 </body>
